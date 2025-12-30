@@ -1,0 +1,60 @@
+Osu AHR lobby bot written in Go.
+
+Usage: ahr [-c config] [-q] [--nc] [channel]
+
+Options:
+    -c config Specify path to configuration file. Default is "config.json".
+    -q        Do not print anything to stdout.
+    --nc      Do not use escape sequences for coloring.
+    channel   Join existing lobby instead of creating a new one.
+
+Configuration is stored in a .json file with the following format:
+
+    {
+        "server": {                                          Should be changed only for running on a
+            "host": "irc.ppy.sh",                            custom Bancho server.
+            "port": 6667
+        },
+        "credentials": {                                     (Optional) will be loaded from .env 
+            "username": "your-irc-username",                 and/or environment variables if left 
+            "password": "your-irc-password"                  unspecified.
+        },
+        "lobby-name": {                                      {min} and {max} are replaced for 
+            "template": "{min}-{max}* | Auto Host Rotate",   difficulty range values, "auto-update"
+            "auto-update": true                              won't allow changing lobby name.
+        },
+        "host-rotation": {                                   "allow-transfers" enables giving the 
+            "enabled": true,                                 host to other players while moving them
+            "allow-transfers": false,                        to the end of the queue. The player
+            "print-queue-on-match-end": false,               giving up the host will also get put to
+            "report-illegal-host-transfers": false,          the end of the queue.
+        },
+        "difficulty-constraint": {                           "allow-violation" set to true will only 
+            "enabled": true,                                 complain about star rating violation if
+            "range": [4.5, 5.99],                            "report-violations" is also set to true 
+            "allow-violation": false,                        instead of picking the last map and 
+            "report-violations": true,                       potentially skipping the host if the
+            "allowed-violations": 3                          number of "allowed-violations" is
+        },                                                   exceeded.
+        "autostart": {
+            "enabled": false,                                Force match start in "delay" seconds
+            "delay": 120,                                    even if not all players are ready.
+            "print-initial-warning": false
+        },
+        "voting": {                                          Controls voting to skip the host or 
+            "enabled": true,                                 start the match. Thresholds are 
+            "start-vote-threshold": 0.75,                    multipliers for the number of players 
+            "skip-vote-threshold": 0.75,                     currently in the lobby.
+        },
+        "misc": {                                            Default logging parameters that can be 
+            "no-color": false,                               overridden by command-line arguments.
+            "quiet": false
+        }
+    }
+
+If not configuration file was found the program will create a default one and prompt the user for 
+credentials.
+
+User credentials and server address can be acquired in the Legacy API section of Osu user settings:
+
+    https://osu.ppy.sh/home/account/edit#legacy-api
