@@ -1,24 +1,22 @@
 Osu AHR lobby bot written in Go. Creates a new lobby or joins an existing one when executed.
 
-Usage: osubot [-c config] [-q] [--nc] [channel]
+Usage: osubot [-c config] [channel]
 
 Options:
     -c config   Specify path to configuration file. Default is "config.json".
-    -q          Do not print anything to stdout.
-    --nc        Do not use escape sequences for coloring.
     channel     Join existing lobby instead of creating a new one.
 
 Configuration is stored in a .json file with the following format:
 
     {
-        "server": {                                          (Optional) should be changed only for 
-            "host": "irc.ppy.sh",                            running on a custom Bancho server.
+        "server": {                                          Should be changed only for running on a 
+            "host": "irc.ppy.sh",                            custom Bancho server.
             "port": 6667
         },
-        "credentials": {                                     (Optional) will be loaded from .env 
-            "username": "your-irc-username",                 and/or environment variables if left 
-            "password": "your-irc-password",                 unspecified. "session" is optional and 
-            "session": "osu_session-cookie"                  is used only in !ddl command.
+        "credentials": {                                     Osu IRC credentials. "session" is 
+            "username": "your-irc-username",                 optional and is used only in !ddl 
+            "password": "your-irc-password",                 command.
+            "session": "osu_session-cookie"
         },
         "lobby-name": {                                      {min} and {max} are replaced for 
             "template": "{min}-{max}* | Auto Host Rotate",   difficulty range values, "auto-update"
@@ -47,10 +45,6 @@ Configuration is stored in a .json file with the following format:
             "enabled": true,                                 start the match. Thresholds are 
             "start-vote-threshold": 0.75,                    multipliers for the number of players 
             "skip-vote-threshold": 0.75                      currently in the lobby.
-        },
-        "misc": {                                            Default logging parameters that can be 
-            "no-color": false,                               overridden by command-line arguments.
-            "quiet": false
         }
     }
 

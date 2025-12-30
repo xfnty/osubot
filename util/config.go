@@ -17,7 +17,7 @@ type ServerConfig struct {
 type CredentialsConfig struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
-	Session string  `json:"session"`
+	Session string  `json:"session,omitempty"`
 }
 
 type LobbyNameConfig struct {
@@ -53,89 +53,48 @@ type VotingConfig struct {
 	SkipVoteThreshold float32  `json:"skip-vote-threshold"`
 }
 
-type MiscConfig struct {
-	NoColor bool `json:"no-color"`
-	Quiet bool   `json:"quiet"`
-}
-
 type Config struct {
-	Server ServerConfig                             `json:"server,omitempty"`
-	Credentials CredentialsConfig                   `json:"credentials,omitempty"`
+	Server ServerConfig                             `json:"server"`
+	Credentials CredentialsConfig                   `json:"credentials"`
 	LobbyName LobbyNameConfig                       `json:"lobby-name"`
 	HostRotation HostRotationConfig                 `json:"host-rotation"`
 	DifficultyConstraint DifficultyConstraintConfig `json:"difficulty-constraint"`
 	AutoStart AutoStartConfig                       `json:"auto-start"`
 	Voting VotingConfig                             `json:"voting"`
-	Misc MiscConfig                                 `json:"misc"`
 }
 
-func GetDefaultConfig() Config {
-	return Config{
-		Server: ServerConfig{
-			Host: "irc.ppy.sh",
-			Port: 6667,
-		},
-		LobbyName: LobbyNameConfig{
-			Template: "{min}-{max}* | Auto Host Rotate",
-			AutoUpdate: true,
-		},
-		HostRotation: HostRotationConfig{
-			Enabled: true,
-			PrintQueueOnMatchEnd: true,
-			ReportIllegalHostTransfers: true,
-		},
-		DifficultyConstraint: DifficultyConstraintConfig{
-			Enabled: true,
-			Range: [2]float32{ 4, 6 },
-			ReportViolations: true,
-			MaxViolations: 3,
-		},
-		AutoStart: AutoStartConfig{
-			Enabled: true,
-			Delay: 120,
-		},
-		Voting: VotingConfig{
-			Enabled: true,
-			StartVoteThreshold: 0.75,
-			SkipVoteThreshold: 0.75,
-		},
-	}
-}
-
-func GetPromptedConfig() (*Config, error) {
-	scanner := bufio.NewScanner(os.Stdin)
-
-	config := GetDefaultConfig()
-
-	fmt.Print("Enter IRC username: ")
-	if !scanner.Scan() {
-		e := scanner.Err()
-		if e == nil {
-			e = io.EOF
-		}
-		return nil, e
-	}
-	config.Credentials.Username = scanner.Text()
-
-	fmt.Print("Enter IRC password: ")
-	if !scanner.Scan() {
-		e := scanner.Err()
-		if e == nil {
-			e = io.EOF
-		}
-		return nil, e
-	}
-	config.Credentials.Password = scanner.Text()
-
-	return &config, nil
+var defaultConfig = &Config{
+	Server: ServerConfig{
+		Host: "irc.ppy.sh",
+		Port: 6667,
+	},
+	LobbyName: LobbyNameConfig{
+		Template: "{min}-{max}* | Auto Host Rotate",
+		AutoUpdate: true,
+	},
+	HostRotation: HostRotationConfig{
+		Enabled: true,
+		PrintQueueOnMatchEnd: true,
+		ReportIllegalHostTransfers: true,
+	},
+	DifficultyConstraint: DifficultyConstraintConfig{
+		Enabled: true,
+		Range: [2]float32{ 4, 6 },
+		ReportViolations: true,
+		MaxViolations: 3,
+	},
+	AutoStart: AutoStartConfig{
+		Enabled: true,
+		Delay: 120,
+	},
+	Voting: VotingConfig{
+		Enabled: true,
+		StartVoteThreshold: 0.75,
+		SkipVoteThreshold: 0.75,
+	},
 }
 
 const DefaultConfigPath = "config.json"
-
-func (c *Config) OverrideWithCommandLineConfig(cmd CommandLineConfig) {
-	if cmd.NoColor { c.Misc.NoColor = true }
-	if cmd.Quiet { c.Misc.Quiet = true }
-}
 
 func LoadConfigFile(path string) (*Config, error) {
 	file, e := os.Open(path)
@@ -170,6 +129,10 @@ func LoadConfig() (*Config, error) {
 		fmt.Println(UsageText)
 		os.Exit(0)
 	}
+	if cmdCfg.Help {
+		fmt.Println(UsageText)
+		os.Exit(0)
+	}
 
 	configPath := DefaultConfigPath
 	if cmdCfg.Config != "" {
@@ -179,30 +142,28 @@ func LoadConfig() (*Config, error) {
 	var pathError *os.PathError
 	cfg, e := LoadConfigFile(configPath)
 	if e != nil {
-		if errors.As(e, &pathError) {
-			cfg, e = GetPromptedConfig()
-			if e != nil {
+		if errors.As(e, &pathError) && cmdCfg.Config == "" {
+			defaultConfigCopy := *defaultConfig
+			for defaultConfigCopy.Credentials.Username, e = getInput("Enter IRC username: "); e != nil; {}
+			for defaultConfigCopy.Credentials.Password, e = getInput("Enter IRC password: "); e != nil; {}
+			cfg = &defaultConfigCopy
+
+			if e = SaveConfig(cfg, DefaultConfigPath); e != nil {
 				return nil, e
 			}
-
-			e = SaveConfig(cfg, DefaultConfigPath)
-			if e != nil {
-				return nil, fmt.Errorf("failed to save \"%v\": %v", configPath, e)
-			}
 		} else {
-			return nil, fmt.Errorf("failed to load \"%v\": %v", configPath, e)
+			return nil, e
 		}
 	}
 
-	cfg.OverrideWithCommandLineConfig(cmdCfg)
+	StdoutLogger.Printf("Loaded configuration from \"%v\"", configPath)
 	return cfg, nil
 }
 
 type CommandLineConfig struct {
 	Config string
-	Quiet bool
-	NoColor bool
 	Channel string
+	Help bool
 }
 
 func GetCommandLineConfig() (CommandLineConfig, error) {
@@ -211,7 +172,6 @@ func GetCommandLineConfig() (CommandLineConfig, error) {
 	}
 
 	cfg := CommandLineConfig{}
-
 	
 	for i := 1; i < len(os.Args); i++ {
 		if os.Args[i] == "-c" {
@@ -220,10 +180,8 @@ func GetCommandLineConfig() (CommandLineConfig, error) {
 			}
 			cfg.Config = os.Args[i+1]
 			i += 1
-		} else if os.Args[i] == "-q" {
-			cfg.Quiet = true
-		} else if os.Args[i] == "--nc" {
-			cfg.NoColor = true
+		} else if os.Args[i] == "--help" || os.Args[i] == "-h" {
+			cfg.Help = true
 		} else if i == len(os.Args) - 1 {
 			cfg.Channel = os.Args[i]
 		} else {
@@ -234,10 +192,22 @@ func GetCommandLineConfig() (CommandLineConfig, error) {
 	return cfg, nil
 }
 
-const UsageText = `Usage: osubot [-c config] [-q] [--nc] [channel]\n
+const UsageText = `Usage: osubot [-h] [-c config] [channel]\n
 Options:
+    -h, --help  Print this help message.
     -c config   Specify path to configuration file. Default is \"config.json\".
-    -q          Do not print anything to stdout.
-    --nc        Do not use escape sequences for coloring.
     channel     Join existing lobby instead of creating a new one.
 `
+
+func getInput(prompt string) (string, error) {
+	scanner := bufio.NewScanner(os.Stdin)
+	fmt.Print(prompt)
+	if !scanner.Scan() {
+		e := scanner.Err()
+		if e == nil {
+			e = io.EOF
+		}
+		return "", e
+	}
+	return scanner.Text(), nil
+}
