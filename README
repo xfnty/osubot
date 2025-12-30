@@ -1,12 +1,12 @@
-Osu AHR lobby bot written in Go.
+Osu AHR lobby bot written in Go. Creates a new lobby or joins an existing one when executed.
 
 Usage: ahr [-c config] [-q] [--nc] [channel]
 
 Options:
-    -c config Specify path to configuration file. Default is "config.json".
-    -q        Do not print anything to stdout.
-    --nc      Do not use escape sequences for coloring.
-    channel   Join existing lobby instead of creating a new one.
+    -c config   Specify path to configuration file. Default is "config.json".
+    -q          Do not print anything to stdout.
+    --nc        Do not use escape sequences for coloring.
+    channel     Join existing lobby instead of creating a new one.
 
 Configuration is stored in a .json file with the following format:
 
@@ -17,7 +17,8 @@ Configuration is stored in a .json file with the following format:
         },
         "credentials": {                                     (Optional) will be loaded from .env 
             "username": "your-irc-username",                 and/or environment variables if left 
-            "password": "your-irc-password"                  unspecified.
+            "password": "your-irc-password",                 unspecified. "session" is optional and 
+            "session": "osu_session-cookie"                  is used only in !ddl command.
         },
         "lobby-name": {                                      {min} and {max} are replaced for 
             "template": "{min}-{max}* | Auto Host Rotate",   difficulty range values, "auto-update"
@@ -27,15 +28,16 @@ Configuration is stored in a .json file with the following format:
             "enabled": true,                                 host to other players while moving them
             "allow-transfers": false,                        to the end of the queue. The player
             "print-queue-on-match-end": false,               giving up the host will also get put to
-            "report-illegal-host-transfers": false,          the end of the queue.
+            "report-illegal-host-transfers": false           the end of the queue.
         },
         "difficulty-constraint": {                           "allow-violation" set to true will only 
             "enabled": true,                                 complain about star rating violation if
             "range": [4.5, 5.99],                            "report-violations" is also set to true 
-            "allow-violation": false,                        instead of picking the last map and 
-            "report-violations": true,                       potentially skipping the host if the
-            "allowed-violations": 3                          number of "allowed-violations" is
-        },                                                   exceeded.
+            "allow-changing": false,                         instead of picking the last map and 
+            "allow-violation": false,                        potentially skipping the host if the
+            "report-violations": true,                       number of "allowed-violations" is
+            "allowed-violations": 3                          exceeded. "allow-changing" enables the
+        },                                                   host to use !sr [min max] command.
         "autostart": {
             "enabled": false,                                Force match start in "delay" seconds
             "delay": 120,                                    even if not all players are ready.
@@ -44,7 +46,7 @@ Configuration is stored in a .json file with the following format:
         "voting": {                                          Controls voting to skip the host or 
             "enabled": true,                                 start the match. Thresholds are 
             "start-vote-threshold": 0.75,                    multipliers for the number of players 
-            "skip-vote-threshold": 0.75,                     currently in the lobby.
+            "skip-vote-threshold": 0.75                      currently in the lobby.
         },
         "misc": {                                            Default logging parameters that can be 
             "no-color": false,                               overridden by command-line arguments.
@@ -58,3 +60,55 @@ credentials.
 User credentials and server address can be acquired in the Legacy API section of Osu user settings:
 
     https://osu.ppy.sh/home/account/edit#legacy-api
+
+Available chat commands:
+
+    !tl/timeleft                Prints the time left until the end of the map if the match is 
+                                currently in the progress.
+
+    !q/queue [usernames...]     Prints host queue. Can be used by the admin to define the queue.
+                                User names can be shortened to the first letters in lower case. The
+                                rest of the users that weren't found in the given list will be put 
+                                at the end of the queue. User names with spaces can be put inside 
+                                double quotes.
+
+                                For example !q v u "a m" will put "Voyager", "user123" and "A Man"  
+                                in the queue making Voyager the host.
+
+    !qp [username]              Prints position in the queue either of the user who executed the 
+                                command or the one with the "username".
+
+    !start [delay]              When used by the regular player starts vote to start the match. When
+                                used by the host either starts the match immediatly or begins a 
+                                start countdown.
+
+    !abort                      Aborts match start countdown when used by the host and in addition
+                                skip vote when used by the admin.
+
+    !skip                       Starts vote to skip the host or transfers host to the next user in 
+                                the queue if used by the host or the admin.
+
+    !autoskip [on/off]          Enables/disables host auto skip for the user executing the command 
+                                or prints autoskip status if no arguments were specified.
+
+    !mirrors                    Prints download mirrors for the current beatmap.
+
+    !ddl [abort]                Uploads beatmap file to online file exchanger. Useful for giving the
+                                download link to a recently created beatmap to players with firewall
+                                issues. "abort" cancels beatmap downloading if it takes too long.
+                                Requires "credentials.session" to be set to the value of 
+                                "osu_session" cookie that can be found in any request to osu.ppy.sh
+                                in Network tab of Developer Tools (Ctrl+Shift+I) in the browser.
+
+    !ahr [on/off]               Enabled/disables host rotation or prints its status when used by the
+                                admin.
+
+    !sr [min max/on/off]        Sets/enabled/disables difficulty range and updates lobby name or 
+                                prints currently activate difficulty range when used by the admin or
+                                by the host if "difficulty-constraint.allow-changing" is set.
+
+    !pb [username]              Prints personal or "username's" best score on the current beatmap.
+
+    !help/info                  Prints match and bot info.
+
+Lobby chat log is by default saved to "chat.log". IRC log is saved to "irc.log" for debug purposes.
