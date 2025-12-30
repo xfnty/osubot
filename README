@@ -1,6 +1,6 @@
 Osu AHR lobby bot written in Go. Creates a new lobby or joins an existing one when executed.
 
-Usage: ahr [-c config] [-q] [--nc] [channel]
+Usage: osubot [-c config] [-q] [--nc] [channel]
 
 Options:
     -c config   Specify path to configuration file. Default is "config.json".
@@ -11,8 +11,8 @@ Options:
 Configuration is stored in a .json file with the following format:
 
     {
-        "server": {                                          Should be changed only for running on a
-            "host": "irc.ppy.sh",                            custom Bancho server.
+        "server": {                                          (Optional) should be changed only for 
+            "host": "irc.ppy.sh",                            running on a custom Bancho server.
             "port": 6667
         },
         "credentials": {                                     (Optional) will be loaded from .env 
@@ -35,10 +35,10 @@ Configuration is stored in a .json file with the following format:
             "range": [4.5, 5.99],                            "report-violations" is also set to true 
             "allow-changing": false,                         instead of picking the last map and 
             "allow-violation": false,                        potentially skipping the host if the
-            "report-violations": true,                       number of "allowed-violations" is
-            "allowed-violations": 3                          exceeded. "allow-changing" enables the
-        },                                                   host to use !sr [min max] command.
-        "autostart": {
+            "report-violations": true,                       number of "max-violations" is exceeded.
+            "max-violations": 3                              "allow-changing" enables the host to 
+        },                                                   use !sr [min max] command.
+        "auto-start": {
             "enabled": false,                                Force match start in "delay" seconds
             "delay": 120,                                    even if not all players are ready.
             "print-initial-warning": false
