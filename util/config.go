@@ -1,11 +1,10 @@
 package util
 
 import (
-	"io"
 	"os"
 	"fmt"
-	"bufio"
 	"errors"
+	"strings"
 	"encoding/json"
 )
 
@@ -36,7 +35,6 @@ type DifficultyConstraintConfig struct {
 	Enabled bool          `json:"enabled"`
 	Range [2]float32      `json:"range"`
 	AllowChanging bool    `json:"allow-changing"`
-	AllowViolation bool   `json:"allow-violation"`
 	ReportViolations bool `json:"report-violations"`
 	MaxViolations int     `json:"max-violations"`
 }
@@ -54,6 +52,7 @@ type VotingConfig struct {
 }
 
 type Config struct {
+	Path string                                     `json:"-"`
 	Server ServerConfig                             `json:"server"`
 	Credentials CredentialsConfig                   `json:"credentials"`
 	LobbyName LobbyNameConfig                       `json:"lobby-name"`
@@ -85,7 +84,7 @@ var defaultConfig = &Config{
 	},
 	AutoStart: AutoStartConfig{
 		Enabled: true,
-		Delay: 120,
+		Delay: 90,
 	},
 	Voting: VotingConfig{
 		Enabled: true,
@@ -96,19 +95,39 @@ var defaultConfig = &Config{
 
 const DefaultConfigPath = "config.json"
 
-func LoadConfigFile(path string) (*Config, error) {
-	file, e := os.Open(path)
+type CommandLineConfig struct {
+	Config string
+	Channel string
+	Help bool
+}
+
+func LoadConfig() (*Config, error) {
+	cmdCfg, e := GetCommandLineConfig()
 	if e != nil {
+		return nil, e
+	}
+	if cmdCfg.Help {
+		fmt.Println(UsageText)
+		os.Exit(0)
+	}
+
+	cfg := &Config{ Path: DefaultConfigPath }
+	if cmdCfg.Config != "" {
+		cfg.Path = cmdCfg.Config
+	}
+
+	file, e := os.Open(cfg.Path)
+	if e != nil {
+		if cfg.Path == DefaultConfigPath && errors.Is(e, os.ErrNotExist) {
+			SaveConfig(defaultConfig, DefaultConfigPath)
+		}
 		return nil, e
 	}
 	defer file.Close()
 
 	decoder := json.NewDecoder(file)
 	decoder.DisallowUnknownFields()
-
-	cfg := &Config{}
-	e = decoder.Decode(cfg)
-	return cfg, e
+	return cfg, decoder.Decode(cfg)
 }
 
 func SaveConfig(cfg *Config, path string) error {
@@ -120,50 +139,6 @@ func SaveConfig(cfg *Config, path string) error {
 	encoder := json.NewEncoder(file)
 	encoder.SetIndent("", "\t")
 	return encoder.Encode(cfg)
-}
-
-func LoadConfig() (*Config, error) {
-	cmdCfg, e := GetCommandLineConfig()
-	if e != nil {
-		fmt.Println(e)
-		fmt.Println(UsageText)
-		os.Exit(0)
-	}
-	if cmdCfg.Help {
-		fmt.Println(UsageText)
-		os.Exit(0)
-	}
-
-	configPath := DefaultConfigPath
-	if cmdCfg.Config != "" {
-		configPath = cmdCfg.Config
-	}
-
-	var pathError *os.PathError
-	cfg, e := LoadConfigFile(configPath)
-	if e != nil {
-		if errors.As(e, &pathError) && cmdCfg.Config == "" {
-			defaultConfigCopy := *defaultConfig
-			for defaultConfigCopy.Credentials.Username, e = getInput("Enter IRC username: "); e != nil; {}
-			for defaultConfigCopy.Credentials.Password, e = getInput("Enter IRC password: "); e != nil; {}
-			cfg = &defaultConfigCopy
-
-			if e = SaveConfig(cfg, DefaultConfigPath); e != nil {
-				return nil, e
-			}
-		} else {
-			return nil, e
-		}
-	}
-
-	StdoutLogger.Printf("Loaded configuration from \"%v\"", configPath)
-	return cfg, nil
-}
-
-type CommandLineConfig struct {
-	Config string
-	Channel string
-	Help bool
 }
 
 func GetCommandLineConfig() (CommandLineConfig, error) {
@@ -183,6 +158,10 @@ func GetCommandLineConfig() (CommandLineConfig, error) {
 		} else if os.Args[i] == "--help" || os.Args[i] == "-h" {
 			cfg.Help = true
 		} else if i == len(os.Args) - 1 {
+			if !strings.HasPrefix(os.Args[i], "#mp_") {
+				e := fmt.Errorf("channel \"%v\" must begin with \"#mp_\"", os.Args[i])
+				return CommandLineConfig{}, e
+			}
 			cfg.Channel = os.Args[i]
 		} else {
 			return CommandLineConfig{}, fmt.Errorf("invalid argument \"%v\"", os.Args[i])
@@ -192,22 +171,9 @@ func GetCommandLineConfig() (CommandLineConfig, error) {
 	return cfg, nil
 }
 
-const UsageText = `Usage: osubot [-h] [-c config] [channel]\n
+const UsageText = `Usage: osubot [-h] [-c config] [channel]
 Options:
     -h, --help  Print this help message.
     -c config   Specify path to configuration file. Default is \"config.json\".
     channel     Join existing lobby instead of creating a new one.
 `
-
-func getInput(prompt string) (string, error) {
-	scanner := bufio.NewScanner(os.Stdin)
-	fmt.Print(prompt)
-	if !scanner.Scan() {
-		e := scanner.Err()
-		if e == nil {
-			e = io.EOF
-		}
-		return "", e
-	}
-	return scanner.Text(), nil
-}

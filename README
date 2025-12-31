@@ -1,43 +1,43 @@
 Osu AHR lobby bot written in Go. Creates a new lobby or joins an existing one when executed.
 
-Usage: osubot [-c config] [channel]
+Usage: osubot [-h] [-c config] [channel]
 
 Options:
+    -h, --help  Print this help message.
     -c config   Specify path to configuration file. Default is "config.json".
     channel     Join existing lobby instead of creating a new one.
 
 Configuration is stored in a .json file with the following format:
 
     {
-        "server": {                                          Should be changed only for running on a 
-            "host": "irc.ppy.sh",                            custom Bancho server.
+        "server": {                                          Should be changed only when running on
+            "host": "irc.ppy.sh",                            a custom Bancho server.
             "port": 6667
         },
         "credentials": {                                     Osu IRC credentials. "session" is 
-            "username": "your-irc-username",                 optional and is used only in !ddl 
+            "username": "your-irc-username",                 optional and is used only by !ddl 
             "password": "your-irc-password",                 command.
             "session": "osu_session-cookie"
         },
-        "lobby-name": {                                      {min} and {max} are replaced for 
+        "lobby-name": {                                      {min} and {max} are replaced by 
             "template": "{min}-{max}* | Auto Host Rotate",   difficulty range values, "auto-update"
             "auto-update": true                              won't allow changing lobby name.
         },
-        "host-rotation": {                                   "allow-transfers" enables giving the 
+        "host-rotation": {                                   "allow-transfers" allows giving the 
             "enabled": true,                                 host to other players while moving them
             "allow-transfers": false,                        to the end of the queue. The player
-            "print-queue-on-match-end": false,               giving up the host will also get put to
+            "print-queue-on-match-end": false,               giving up the host will also be put to
             "report-illegal-host-transfers": false           the end of the queue.
         },
-        "difficulty-constraint": {                           "allow-violation" set to true will only 
-            "enabled": true,                                 complain about star rating violation if
-            "range": [4.5, 5.99],                            "report-violations" is also set to true 
-            "allow-changing": false,                         instead of picking the last map and 
-            "allow-violation": false,                        potentially skipping the host if the
-            "report-violations": true,                       number of "max-violations" is exceeded.
-            "max-violations": 3                              "allow-changing" enables the host to 
-        },                                                   use !sr [min max] command.
+        "difficulty-constraint": {                           The host can use !sr [min max] command
+            "enabled": true,                                 if "allow-changing" is set. If the host
+            "range": [4.5, 5.99],                            violates difficulty range more than
+            "allow-changing": false,                         "max-violations" times he will be 
+            "report-violations": true,                       skipped unless "max-violations" number
+            "max-violations": 3                              is 0.
+        },
         "auto-start": {
-            "enabled": false,                                Force match start in "delay" seconds
+            "enabled": false,                                Force match start after a "delay"
             "delay": 120,                                    even if not all players are ready.
             "print-initial-warning": false
         },
@@ -47,9 +47,6 @@ Configuration is stored in a .json file with the following format:
             "skip-vote-threshold": 0.75                      currently in the lobby.
         }
     }
-
-If not configuration file was found the program will create a default one and prompt the user for 
-credentials.
 
 User credentials and server address can be acquired in the Legacy API section of Osu user settings:
 

@@ -23,7 +23,7 @@ func dispatch(m irc.Message) error {
 		util.StdoutLogger.Println("Authenticated as", config.Credentials.Username)
 	} else if m.Command == "464" {
 		connection.Close()
-		return errors.New(m.Params[1])
+		return errors.New("Bad authentication token")
 	}
 
 	return nil
@@ -43,6 +43,7 @@ func main() {
 	if e != nil {
 		util.StdoutLogger.Fatalln(e)
 	}
+	util.StdoutLogger.Printf("Loaded configuration from \"%v\"", config.Path)
 
 	connection, e = irc.Connect(
 		config.Server.Host,
