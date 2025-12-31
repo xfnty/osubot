@@ -9,8 +9,9 @@ import (
 )
 
 type ServerConfig struct {
-	Host string `json:"host"`
-	Port int    `json:"port"`
+	Host string       `json:"host"`
+	Port int          `json:"port"`
+	RateLimit float32 `json:"rate-limit"`
 }
 
 type CredentialsConfig struct {
@@ -53,6 +54,7 @@ type VotingConfig struct {
 
 type Config struct {
 	Path string                                     `json:"-"`
+	Channel string                                  `json:"-"`
 	Server ServerConfig                             `json:"server"`
 	Credentials CredentialsConfig                   `json:"credentials"`
 	LobbyName LobbyNameConfig                       `json:"lobby-name"`
@@ -66,6 +68,7 @@ var defaultConfig = &Config{
 	Server: ServerConfig{
 		Host: "irc.ppy.sh",
 		Port: 6667,
+		RateLimit: 4,
 	},
 	LobbyName: LobbyNameConfig{
 		Template: "{min}-{max}* | Auto Host Rotate",
@@ -111,7 +114,7 @@ func LoadConfig() (*Config, error) {
 		os.Exit(0)
 	}
 
-	cfg := &Config{ Path: DefaultConfigPath }
+	cfg := &Config{ Path: DefaultConfigPath, Channel: cmdCfg.Channel }
 	if cmdCfg.Config != "" {
 		cfg.Path = cmdCfg.Config
 	}

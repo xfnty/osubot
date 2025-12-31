@@ -7,11 +7,36 @@ import (
 	"bufio"
 	"unicode"
 	"strings"
+	"strconv"
+	"osubot/util"
 )
 
+type Message struct {
+	Source string
+	Command string
+	Params []string
+}
+
 type Connection struct {
+	user string
 	conn net.Conn
 	scanner *bufio.Scanner
+}
+
+func Connect(host string, port int, username string, password string) (Connection, error) {
+	conn, e := net.Dial("tcp", fmt.Sprintf("%v:%v", host, port))
+	if e != nil {
+		return Connection{}, e
+	}
+
+	c := Connection{ 
+		user: username, 
+		conn: conn, 
+		scanner: bufio.NewScanner(conn),
+	}
+
+	fmt.Fprintf(c.conn, "PASS %v\nNICK %v\n", password, username)
+	return c, nil
 }
 
 func (c Connection) Read() (Message, error) {
@@ -58,37 +83,20 @@ func (c Connection) Read() (Message, error) {
 		break
 	}
 
+	if msg.Command != "QUIT" {
+		util.IrcLogger.Printf("%v: %v %v", msg.Source, msg.Command, strings.Join(msg.Params, " "))
+	}
+
 	return msg, nil
 }
 
 func (c Connection) Write(b []byte) (int, error) {
+	util.IrcLogger.Println("Sent", strconv.Quote(string(b)))
 	return c.conn.Write(b)
 }
 
 func (c Connection) Close() {
 	c.conn.Close()
-}
-
-type Message struct {
-	Source string
-	Command string
-	Params []string
-}
-
-func Connect(host string, port int, username string, password string) (Connection, error) {
-	conn, e := net.Dial("tcp", fmt.Sprintf("%v:%v", host, port))
-	if e != nil {
-		return Connection{}, e
-	}
-
-	c := Connection{ conn: conn, scanner: bufio.NewScanner(conn) }
-
-	if _, e := fmt.Fprintf(c, "PASS %v\nNICK %v\n", password, username); e != nil {
-		c.Close()
-		return Connection{}, e
-	}
-
-	return c, nil
 }
 
 type fieldRange struct {

@@ -11,8 +11,9 @@ Configuration is stored in a .json file with the following format:
 
     {
         "server": {                                          Should be changed only when running on
-            "host": "irc.ppy.sh",                            a custom Bancho server.
-            "port": 6667
+            "host": "irc.ppy.sh",                            a custom Bancho server. "rate-limit"
+            "port": 6667,                                    defines how many requests can be sent
+            "rate-limit": 4                                  to the server in a second.
         },
         "credentials": {                                     Osu IRC credentials. "session" is 
             "username": "your-irc-username",                 optional and is used only by !ddl 
