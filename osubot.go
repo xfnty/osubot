@@ -3,6 +3,8 @@ package main
 import (
 	"os"
 	"fmt"
+	"slices"
+	"strings"
 	"os/signal"
 	"osubot/irc"
 	"osubot/util"
@@ -30,11 +32,16 @@ func OnJoinError(message string) {
 	connection.Close()
 }
 
-func OnJoinedLobby(channel string) {
+func OnJoinedLobby(channel string, usernames []string) {
 	util.StdoutLogger.Println("Joined", channel)
-	fmt.Fprintf(connection, "PRIVMSG %v !mp password\n", channel)
-	fmt.Fprintf(connection, "PRIVMSG %v !mp invite %v\n", channel, config.Credentials.Username)
-	fmt.Fprintf(connection, "PRIVMSG %v !mp close\n", channel)
+
+	if config.Channel == "" {
+		fmt.Fprintf(connection, "PRIVMSG %v !mp password\n", channel)
+	}
+
+	if i := slices.Index(usernames, config.Credentials.Username); i == -1 {
+		fmt.Fprintf(connection, "PRIVMSG %v !mp invite %v\n", channel, config.Credentials.Username)
+	}
 }
 
 func OnLeftLobby(channel string) {
@@ -53,12 +60,15 @@ func OnUserLeft(channel string, username string) {
 }
 
 func OnUserMessage(channel string, username string, message string) {
-	util.StdoutLogger.Printf("%v: %v\n", username, message)
-	util.ChatLogger.Printf("%v: %v\n", username, message)
+	msg := fmt.Sprintf("%v: %v", username, message)
+	util.StdoutLogger.Println(msg)
+	util.ChatLogger.Println(msg)
 }
 
 func OnUserCommand(channel string, username string, command string, params []string) {
-	util.StdoutLogger.Printf("%v: %v %v\n", username, command, params)
+	msg := fmt.Sprintf("%v !%v %v", username, command, strings.Join(params, " "))
+	util.StdoutLogger.Println(msg)
+	util.ChatLogger.Println(msg)
 }
 
 func main() {
@@ -71,6 +81,8 @@ func main() {
 	}
 	util.StdoutLogger.Printf("Loaded configuration from \"%v\"", config.Path)
 
+	irc.RateLimit = config.Server.RateLimit
+
 	connection, e = irc.Connect(
 		config.Server.Host,
 		config.Server.Port,
@@ -80,20 +92,19 @@ func main() {
 	if e != nil {
 		util.StdoutLogger.Fatalln(e)
 	}
-	defer connection.Close()
 	util.StdoutLogger.Println("Connected to", config.Server.Host)
 
-    interrupt := make(chan os.Signal, 1)
-    signal.Notify(interrupt, os.Interrupt)
+	interrupt := make(chan os.Signal, 1)
+	signal.Notify(interrupt, os.Interrupt)
 
-    messages := make(chan irc.Message)
+	messages := make(chan irc.Message)
 
-    go func(){
-    	for m, e := connection.Read(); e == nil; m, e = connection.Read() {
-    		messages <- m
-    	}
-    	close(messages)
-    }()
+	go func(){
+		for m, e := connection.Read(); e == nil; m, e = connection.Read() {
+			messages <- m
+		}
+		close(messages)
+	}()
 
 	dispatcher := irc.LobbyMessageDispatcher{
 		Owner: config.Credentials.Username,
@@ -108,20 +119,21 @@ func main() {
 		UserCommand: OnUserCommand,
 	}
 
-    for running := true; running; {
-    	select {
-    	case m, open := <-messages:
-    		if !open {
-    			running = false
-    			break
-    		}
-    		if m.Command == "PING" {
-    			fmt.Fprintln(connection, "PONG")
-    			break
-    		}
-    		dispatcher.Dispatch(m)
-    	case <-interrupt:
-    		running = false
-    	}
-    }
+	for running := true; running; {
+		select {
+		case m, open := <-messages:
+			if !open {
+				running = false
+				break
+			}
+			if m.Command == "PING" {
+				fmt.Fprintln(connection, "PONG")
+				break
+			}
+			dispatcher.Dispatch(m)
+		case <-interrupt:
+			connection.Close()
+			running = false
+		}
+	}
 }

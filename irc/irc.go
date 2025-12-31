@@ -4,12 +4,15 @@ import (
 	"io"
 	"fmt"
 	"net"
+	"time"
 	"bufio"
 	"unicode"
 	"strings"
 	"strconv"
 	"osubot/util"
 )
+
+var RateLimit float32 = 4
 
 type Message struct {
 	Source string
@@ -21,6 +24,7 @@ type Connection struct {
 	user string
 	conn net.Conn
 	scanner *bufio.Scanner
+	requests chan []byte
 }
 
 func Connect(host string, port int, username string, password string) (Connection, error) {
@@ -33,7 +37,16 @@ func Connect(host string, port int, username string, password string) (Connectio
 		user: username, 
 		conn: conn, 
 		scanner: bufio.NewScanner(conn),
+		requests: make(chan []byte, 64),
 	}
+
+	go func(){
+		for b := range c.requests {
+			util.IrcLogger.Println("Sent", strconv.Quote(string(b)))
+			c.conn.Write(b)
+			time.Sleep(time.Duration(1 / RateLimit) * time.Second)
+		}
+	}()
 
 	fmt.Fprintf(c.conn, "PASS %v\nNICK %v\n", password, username)
 	return c, nil
@@ -91,12 +104,15 @@ func (c Connection) Read() (Message, error) {
 }
 
 func (c Connection) Write(b []byte) (int, error) {
-	util.IrcLogger.Println("Sent", strconv.Quote(string(b)))
-	return c.conn.Write(b)
+	b2 := make([]byte, len(b))
+	copy(b2, b)
+	c.requests <- b2
+	return len(b), nil
 }
 
 func (c Connection) Close() {
 	c.conn.Close()
+	close(c.requests)
 }
 
 type fieldRange struct {

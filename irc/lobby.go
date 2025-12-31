@@ -8,6 +8,7 @@ import (
 
 type LobbySimpleCallback func()
 type LobbyChannelCallback func(channel string)
+type LobbyPlayersCallback func(channel string, usernames []string)
 type LobbyErrorCallback func(message string)
 type LobbyUserCallback func(channel string, username string)
 type LobbyUserMessageCallback func(channel string, username string, message string)
@@ -17,7 +18,7 @@ type LobbyMessageDispatcher struct {
 	Authenticated LobbySimpleCallback
 	AuthenticationError LobbyErrorCallback
 	JoinError LobbyErrorCallback
-	JoinedLobby LobbyChannelCallback
+	JoinedLobby LobbyPlayersCallback
 	LeftLobby LobbyChannelCallback
 	UserJoined LobbyUserCallback
 	UserLeft LobbyUserCallback
@@ -49,8 +50,10 @@ func (d LobbyMessageDispatcher) Dispatch(m Message) {
 			e = m.Params[2]
 		}
 		d.JoinError(e)
-	} else if m.Command == "MODE" && len(m.Params) == 3 && m.Params[1] == "+v" && m.Params[2] == d.Owner && d.JoinedLobby != nil {
-		d.JoinedLobby(m.Params[0])
+	} else if m.Command == "353" && len(m.Params) == 4 && m.Params[0] == d.Owner && d.JoinedLobby != nil {
+		usernames := strings.Fields(m.Params[3])
+		usernames = usernames[1:len(usernames)-1]
+		d.JoinedLobby(m.Params[2], usernames)
 	} else if m.Command == "PART" && m.Source == d.Owner && d.LeftLobby != nil && len(m.Params) == 1 {
 		d.LeftLobby(m.Params[0])
 	} else if m.Command == "PRIVMSG" && len(m.Params) >= 2 {
