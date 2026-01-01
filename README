@@ -61,7 +61,7 @@ and will try to rejoin that lobby if it crashes or gets terminated. The [channel
 argument overrides this setting. If the argument is not present saved lobby channel is not valid 
 anymore the bot will simply create a new lobby.
 
-Crash report gets be saved to "crash.log".
+Crash reports, lobby chat, IRC and API logs are saved to the corresponding .log files.
 
 Available chat commands:
 
@@ -111,5 +111,3 @@ Available chat commands:
     !pb [username]              Prints personal or "username's" best score on the current beatmap.
 
     !help/info                  Prints match and bot info.
-
-Lobby chat log is by default saved to "chat.log". IRC log is saved to "irc.log" for debug purposes.

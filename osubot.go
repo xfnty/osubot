@@ -43,7 +43,7 @@ func OnAuthenticationError(message string) {
 
 func OnJoinError(message string) {
 	util.StdoutLogger.Println(message)
-	
+
 	if Config.SpecifiedChannel == "" && Config.SavedChannel != "" {
 		Config.SavedChannel = ""
 		util.SaveChannel("")

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 	"sync"
+	"bytes"
 	"strings"
 	"net/http"
 	"osubot/util"
@@ -55,7 +56,8 @@ func Init(id string, secret string) error {
 }
 
 func makeRequest(retval any, method string, payload string, path string, args ...interface{}) error {
-	request, e := http.NewRequest(method, fmt.Sprintf(path, args...), strings.NewReader(payload))
+	path = fmt.Sprintf(path, args...)
+	request, e := http.NewRequest(method, path, strings.NewReader(payload))
 	if e != nil {
 		return e
 	}
@@ -81,6 +83,12 @@ func makeRequest(retval any, method string, payload string, path string, args ..
 	b, e := io.ReadAll(response.Body)
 	if e != nil {
 		return e
+	}
+
+	var buffer bytes.Buffer
+	e = json.Indent(&buffer, b, "", "\t")
+	if e == nil {
+		util.ApiLogger.Printf("%v %v\n%v\n\n", method, path, buffer.String())
 	}
 
 	return json.Unmarshal(b, retval)
