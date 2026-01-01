@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"os/signal"
+	"osubot/api"
 	"osubot/irc"
 	"osubot/util"
 )
@@ -20,7 +21,7 @@ var SkipVoters = make(map[string]struct{})
 var StartVoters = make(map[string]struct{})
 
 func OnAuthenticated() {
-	util.StdoutLogger.Println("Authenticated as", Config.Credentials.Username)
+	util.StdoutLogger.Println("Authenticated as", Config.Credentials.IrcUsername)
 
 	if Config.SpecifiedChannel != ""  {
 		fmt.Fprintf(Connection, "JOIN %v\n", Config.SpecifiedChannel)
@@ -30,7 +31,7 @@ func OnAuthenticated() {
 		fmt.Fprintf(
 			Connection, 
 			"PRIVMSG BanchoBot !mp make %v's game\n", 
-			Config.Credentials.Username,
+			Config.Credentials.IrcUsername,
 		)
 	}
 }
@@ -49,7 +50,7 @@ func OnJoinError(message string) {
 		fmt.Fprintf(
 			Connection, 
 			"PRIVMSG BanchoBot !mp make %v's game\n", 
-			Config.Credentials.Username,
+			Config.Credentials.IrcUsername,
 		)
 	} else {
 		Connection.Close()
@@ -67,8 +68,8 @@ func OnJoinedLobby(channel string, usernames []string) {
 		fmt.Fprintf(Connection, "PRIVMSG %v !mp password\n", channel)
 	}
 
-	if i := slices.Index(usernames, Config.Credentials.Username); i == -1 {
-		fmt.Fprintf(Connection, "PRIVMSG %v !mp invite %v\n", channel, Config.Credentials.Username)
+	if i := slices.Index(usernames, Config.Credentials.IrcUsername); i == -1 {
+		fmt.Fprintf(Connection, "PRIVMSG %v !mp invite %v\n", channel, Config.Credentials.IrcUsername)
 	}
 }
 
@@ -253,11 +254,40 @@ func main() {
 
 	irc.RateLimit = Config.Server.RateLimit
 
+	if e = api.Init(Config.Credentials.ApiId, Config.Credentials.ApiSecret); e != nil {
+		util.StdoutLogger.Fatalln(e)
+	}
+
+	u, e := api.GetUser(Config.Credentials.IrcUsername)
+	if e != nil {
+		util.StdoutLogger.Fatalln(e)
+	}
+
+	scores, e := api.GetUserScores(u.Id, 10, api.BestScores)
+	if e != nil {
+		util.StdoutLogger.Fatalln(e)
+	}
+
+	fmt.Println(u.Username + "'s best scores:")
+	for _, s := range scores {
+		fmt.Printf(
+			"%.1f x%v %v %.0fpp on %v - %v [%v] (%.2f*)\n", 
+			s.Accuracy * 100, 
+			s.MaxCombo, 
+			s.Rank, 
+			*s.Pp,
+			s.BeatmapSet.Artist,
+			s.BeatmapSet.Title,
+			s.Beatmap.Name,
+			s.Beatmap.Stars,
+		)
+	}
+
 	Connection, e = irc.Connect(
 		Config.Server.Host,
 		Config.Server.Port,
-		Config.Credentials.Username,
-		Config.Credentials.Password,
+		Config.Credentials.IrcUsername,
+		Config.Credentials.IrcPassword,
 	)
 	if e != nil {
 		util.StdoutLogger.Fatalln(e)
@@ -277,7 +307,7 @@ func main() {
 	}()
 
 	dispatcher := irc.LobbyMessageDispatcher{
-		Owner: Config.Credentials.Username,
+		Owner: Config.Credentials.IrcUsername,
 		Authenticated: OnAuthenticated,
 		AuthenticationError: OnAuthenticationError,
 		JoinError: OnJoinError,
@@ -313,7 +343,7 @@ func main() {
 			fmt.Print("Close the lobby? [Y/n]: ")
 			n, _ := os.Stdin.Read(b)
 			if n == 1 && b[0] != 'n' {
-				fmt.Fprintf(connection, "PRIVMSG %v !mp close\n", Channel)
+				fmt.Fprintf(Connection, "PRIVMSG %v !mp close\n", Channel)
 			}
 			running = false
 		}

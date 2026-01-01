@@ -15,9 +15,11 @@ type ServerConfig struct {
 }
 
 type CredentialsConfig struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-	Session string  `json:"session,omitempty"`
+	IrcUsername string `json:"irc-username"`
+	IrcPassword string `json:"irc-password"`
+	WebSession string  `json:"web-session,omitempty"`
+	ApiId string       `json:"api-id"`
+	ApiSecret string   `json:"api-secret"`
 }
 
 type LobbyNameConfig struct {

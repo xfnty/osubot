@@ -15,10 +15,12 @@ Configuration is stored in a .json file with the following format:
             "port": 6667,                                    defines how many requests can be sent
             "rate-limit": 4                                  to the server in a second.
         },
-        "credentials": {                                     Osu IRC credentials. "session" is 
-            "username": "your-irc-username",                 optional and is used only by !ddl 
-            "password": "your-irc-password",                 command.
-            "session": "osu_session-cookie"
+        "credentials": {                                     Osu credentials. "web-session" is 
+            "irc-username": "your-irc-username",             optional and is only used by !ddl 
+            "irc-password": "your-irc-password",             command.
+            "web-session": "osu_session-cookie",
+            "api-id": "oauth-app-id",
+            "api-secret": "oauth-app-secret"
         },
         "lobby-name": {                                      {min} and {max} are replaced by 
             "template": "{min}-{max}* | Auto Host Rotate",   difficulty range values, "auto-update"
@@ -49,9 +51,10 @@ Configuration is stored in a .json file with the following format:
         }
     }
 
-User credentials and server address can be acquired in the Legacy API section of Osu user settings:
+User credentials can be acquired on the Osu! profile settings page:
 
-    https://osu.ppy.sh/home/account/edit#legacy-api
+    OAuth: https://osu.ppy.sh/home/account/edit#oauth
+    IRC: https://osu.ppy.sh/home/account/edit#legacy-api
 
 If the bot successfully creates or joins a lobby it will save the lobby channel in "lobby.save" file
 and will try to rejoin that lobby if it crashes or gets terminated. The [channel] command-line 
