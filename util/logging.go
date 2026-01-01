@@ -5,6 +5,13 @@ import (
 	"fmt"
 	"log"
 	"time"
+	"runtime/debug"
+)
+
+const (
+	chatLogPath = "chat.log"
+	ircLogPath = "irc.log"
+	crashLogPath = "crash.log"
 )
 
 var chatLog *os.File
@@ -17,12 +24,19 @@ var IrcLogger *log.Logger
 func InitLogging() {
 	var e error
 
-	chatLog, e = os.OpenFile("chat.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	crashLog, e := os.OpenFile(crashLogPath, os.O_CREATE|os.O_WRONLY, 0644)
+	if e != nil {
+		panic(e)
+	}
+	debug.SetCrashOutput(crashLog, debug.CrashOptions{})
+	crashLog.Close()
+
+	chatLog, e = os.OpenFile(chatLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if e != nil {
 		panic(e)
 	}
 
-	ircLog, e = os.OpenFile("irc.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	ircLog, e = os.OpenFile(ircLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if e != nil {
 		panic(e)
 	}

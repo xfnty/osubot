@@ -30,6 +30,7 @@ type HostRotationConfig struct {
 	AllowTransfers bool             `json:"allow-transfers"`
 	PrintQueueOnMatchEnd bool       `json:"print-queue-on-match-end"`
 	ReportIllegalHostTransfers bool `json:"report-illegal-host-transfers"`
+	ReportAllowedHostTransfers bool `json:"report-allowed-host-transfers"`
 }
 
 type DifficultyConstraintConfig struct {
@@ -90,8 +91,10 @@ var defaultConfig = &Config{
 	},
 	HostRotation: HostRotationConfig{
 		Enabled: true,
+		AllowTransfers: true,
 		PrintQueueOnMatchEnd: true,
 		ReportIllegalHostTransfers: true,
+		ReportAllowedHostTransfers: true,
 	},
 	DifficultyConstraint: DifficultyConstraintConfig{
 		Enabled: true,

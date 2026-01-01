@@ -24,7 +24,11 @@ func OnAuthenticated() {
 	} else if config.SavedChannel != "" {
 		fmt.Fprintf(connection, "JOIN %v\n", config.SavedChannel)
 	} else {
-		fmt.Fprintf(connection, "PRIVMSG BanchoBot !mp make %v's game\n", config.Credentials.Username)
+		fmt.Fprintf(
+			connection, 
+			"PRIVMSG BanchoBot !mp make %v's game\n", 
+			config.Credentials.Username,
+		)
 	}
 }
 
@@ -39,7 +43,11 @@ func OnJoinError(message string) {
 	if config.SpecifiedChannel == "" && config.SavedChannel != "" {
 		config.SavedChannel = ""
 		util.SaveChannel("")
-		fmt.Fprintf(connection, "PRIVMSG BanchoBot !mp make %v's game\n", config.Credentials.Username)
+		fmt.Fprintf(
+			connection, 
+			"PRIVMSG BanchoBot !mp make %v's game\n", 
+			config.Credentials.Username,
+		)
 	} else {
 		connection.Close()
 	}
@@ -69,6 +77,10 @@ func OnLobbyClosed(channel string) {
 
 func OnUserJoined(channel string, username string) {
 	players = append(players, username)
+
+	if len(players) == 1 {
+		fmt.Fprintf(connection, "PRIVMSG %v !mp host %v\n", channel, username)
+	}
 }
 
 func OnUserLeft(channel string, username string) {
@@ -81,6 +93,39 @@ func OnUserLeft(channel string, username string) {
 }
 
 func OnHostChanged(channel string, username string) {
+	i := slices.Index(players, username)
+	if username != players[0] && config.HostRotation.Enabled {
+		if config.HostRotation.AllowTransfers {
+			phost, nhost := players[0], players[i]
+			players = slices.Concat(
+				players[i:i], 
+				players[1:i], 
+				players[i+1:len(players)], 
+				players[0:0],
+			)
+			if config.HostRotation.ReportAllowedHostTransfers {
+				fmt.Fprintf(
+					connection, 
+					"PRIVMSG %v %v gave host to %v, queue changed to: %v\n", 
+					channel, 
+					phost,
+					nhost,
+					strings.Join(slices.Concat(players[1:], players[:1]), ", "), 
+				)
+			}
+		} else {
+			fmt.Fprintf(connection, "PRIVMSG %v !mp host %v\n", channel, players[0])
+			if config.HostRotation.ReportIllegalHostTransfers {
+				fmt.Fprintf(
+					connection, 
+					"PRIVMSG %v %v, the host will be given to the next player automatically" +
+					" because AHR is enabled.\n", 
+					channel,
+					players[0],
+				)
+			}
+		}
+	}
 }
 
 func OnBeatmapChanged(channel string, beatmap_id string) {
@@ -94,6 +139,13 @@ func OnMatchStarted(channel string) {
 }
 
 func OnMatchFinished(channel string) {
+	if config.HostRotation.Enabled && len(players) > 1 {
+		rotateHost()
+		fmt.Fprintf(connection, "PRIVMSG %v !mp host %v\n", channel, players[0])
+		if config.HostRotation.PrintQueueOnMatchEnd {
+			printHostQueue(channel)
+		}
+	}
 }
 
 func OnMatchAborted(channel string) {
@@ -104,28 +156,38 @@ func OnUserMessage(channel string, username string, message string) {
 }
 
 func OnUserCommand(channel string, username string, command string, params []string) {
-	if command == "q" {
-		fmt.Fprintf(
-			connection, 
-			"PRIVMSG %v Queue: %v\n", 
-			channel, 
-			strings.Join(slices.Concat(players[1:], players[:1]), ", "), 
-		)
+	if command == "q" && config.HostRotation.Enabled {
+		printHostQueue(channel)
 	} else if command == "info" || command == "help" {
 		fmt.Fprintf(
 			connection,
 			"PRIVMSG %[1]v ┌ Info:\n" +
-			"PRIVMSG %[1]v │    Players: %[2]v\n" +
-			"PRIVMSG %[1]v │    [https://osu.ppy.sh/mp/%[3]v Match History]\n" +
-			"PRIVMSG %[1]v │    [%[4]v Bot's Source Code]\n" +
+			"PRIVMSG %[1]v │    AHR enabled: %[2]v\n" +
+			"PRIVMSG %[1]v │    Players: %[3]v\n" +
+			"PRIVMSG %[1]v │    [https://osu.ppy.sh/mp/%[4]v Match History]\n" +
+			"PRIVMSG %[1]v │    [%[5]v Bot's Source Code]\n" +
 			"PRIVMSG %[1]v ┌ Commands:\n" +
 			"PRIVMSG %[1]v │    !q – print host queue\n",
 			channel,
+			config.HostRotation.Enabled,
 			strings.Join(players, ", "),
 			channel[4:],
 			SourceRepository,
 		)
 	}
+}
+
+func printHostQueue(channel string) {
+	fmt.Fprintf(
+		connection, 
+		"PRIVMSG %v Queue: %v\n", 
+		channel, 
+		strings.Join(slices.Concat(players[1:], players[:1]), ", "), 
+	)
+}
+
+func rotateHost() {
+	players = slices.Concat(players[1:], players[:1])
 }
 
 func main() {

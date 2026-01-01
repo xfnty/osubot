@@ -58,6 +58,8 @@ and will try to rejoin that lobby if it crashes or gets terminated. The [channel
 argument overrides this setting. If the argument is not present saved lobby channel is not valid 
 anymore the bot will simply create a new lobby.
 
+Crash report gets be saved to "crash.log".
+
 Available chat commands:
 
     !tl/timeleft                Prints the time left until the end of the map if the match is 
