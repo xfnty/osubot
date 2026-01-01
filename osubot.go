@@ -10,8 +10,11 @@ import (
 	"osubot/util"
 )
 
+const SourceRepository = "https://github.com/xfnty/osubot"
+
 var config *util.Config
 var connection irc.Connection
+var players []string
 
 func OnAuthenticated() {
 	util.StdoutLogger.Println("Authenticated as", config.Credentials.Username)
@@ -43,9 +46,9 @@ func OnJoinError(message string) {
 }
 
 func OnJoinedLobby(channel string, usernames []string) {
-	util.SaveChannel(channel)
-
 	util.StdoutLogger.Println("Joined", channel)
+	util.SaveChannel(channel)
+	players = usernames
 
 	if config.SpecifiedChannel == "" && config.SavedChannel == "" {
 		fmt.Fprintf(connection, "PRIVMSG %v !mp password\n", channel)
@@ -57,7 +60,6 @@ func OnJoinedLobby(channel string, usernames []string) {
 }
 
 func OnLeftLobby(channel string) {
-	util.StdoutLogger.Println("Left", channel)
 }
 
 func OnLobbyClosed(channel string) {
@@ -66,21 +68,22 @@ func OnLobbyClosed(channel string) {
 }
 
 func OnUserJoined(channel string, username string) {
-	util.StdoutLogger.Println(username, "joined")
-	util.ChatLogger.Println(username, "joined")
+	players = append(players, username)
 }
 
 func OnUserLeft(channel string, username string) {
-	util.StdoutLogger.Println(username, "left")
-	util.ChatLogger.Println(username, "left")
+	i := slices.Index(players, username)
+	players = slices.Concat(players[:i], players[i+1:])
+
+	if len(players) == 0 {
+		fmt.Fprintf(connection, "PRIVMSG %v !mp close\n", channel)
+	}
 }
 
 func OnHostChanged(channel string, username string) {
-	util.StdoutLogger.Println(username, "became the host")
 }
 
 func OnBeatmapChanged(channel string, beatmap_id string) {
-	util.StdoutLogger.Println("Changed beatmap to", beatmap_id)
 }
 
 func OnAllPlayersReady(channel string) {
@@ -88,30 +91,41 @@ func OnAllPlayersReady(channel string) {
 }
 
 func OnMatchStarted(channel string) {
-	util.StdoutLogger.Println("Match started")
-	util.ChatLogger.Println("Match started")
 }
 
 func OnMatchFinished(channel string) {
-	util.StdoutLogger.Println("Match finished")
-	util.ChatLogger.Println("Match finished")
 }
 
 func OnMatchAborted(channel string) {
-	util.StdoutLogger.Println("Match aborted")
-	util.ChatLogger.Println("Match aborted")
 }
 
 func OnUserMessage(channel string, username string, message string) {
-	msg := fmt.Sprintf("%v: %v", username, message)
-	util.StdoutLogger.Println(msg)
-	util.ChatLogger.Println(msg)
+	util.ChatLogger.Printf("%v: %v\n", username, message)
 }
 
 func OnUserCommand(channel string, username string, command string, params []string) {
-	msg := fmt.Sprintf("%v !%v %v", username, command, strings.Join(params, " "))
-	util.StdoutLogger.Println(msg)
-	util.ChatLogger.Println(msg)
+	if command == "q" {
+		fmt.Fprintf(
+			connection, 
+			"PRIVMSG %v Queue: %v\n", 
+			channel, 
+			strings.Join(slices.Concat(players[1:], players[:1]), ", "), 
+		)
+	} else if command == "info" || command == "help" {
+		fmt.Fprintf(
+			connection,
+			"PRIVMSG %[1]v ┌ Info:\n" +
+			"PRIVMSG %[1]v │    Players: %[2]v\n" +
+			"PRIVMSG %[1]v │    [https://osu.ppy.sh/mp/%[3]v Match History]\n" +
+			"PRIVMSG %[1]v │    [%[4]v Bot's Source Code]\n" +
+			"PRIVMSG %[1]v ┌ Commands:\n" +
+			"PRIVMSG %[1]v │    !q – print host queue\n",
+			channel,
+			strings.Join(players, ", "),
+			channel[4:],
+			SourceRepository,
+		)
+	}
 }
 
 func main() {
@@ -122,7 +136,7 @@ func main() {
 	if config, e = util.LoadConfig(); e != nil {
 		util.StdoutLogger.Fatalln(e)
 	}
-	util.StdoutLogger.Printf("Loaded configuration from \"%v\"", config.Path)
+	util.StdoutLogger.Printf("Loaded \"%v\"", config.Path)
 
 	irc.RateLimit = config.Server.RateLimit
 
