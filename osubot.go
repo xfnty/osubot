@@ -15,6 +15,8 @@ const SourceRepository = "https://github.com/xfnty/osubot"
 var config *util.Config
 var connection irc.Connection
 var players []string
+var skipVoters = make(map[string]struct{})
+var startVoters = make(map[string]struct{})
 
 func OnAuthenticated() {
 	util.StdoutLogger.Println("Authenticated as", config.Credentials.Username)
@@ -136,6 +138,8 @@ func OnAllPlayersReady(channel string) {
 }
 
 func OnMatchStarted(channel string) {
+	clear(skipVoters)
+	clear(startVoters)
 }
 
 func OnMatchFinished(channel string) {
@@ -156,24 +160,66 @@ func OnUserMessage(channel string, username string, message string) {
 }
 
 func OnUserCommand(channel string, username string, command string, params []string) {
-	if command == "q" && config.HostRotation.Enabled {
-		printHostQueue(channel)
-	} else if command == "info" || command == "help" {
+	if command == "info" || command == "help" {
 		fmt.Fprintf(
 			connection,
 			"PRIVMSG %[1]v ┌ Info:\n" +
 			"PRIVMSG %[1]v │    AHR enabled: %[2]v\n" +
 			"PRIVMSG %[1]v │    Players: %[3]v\n" +
-			"PRIVMSG %[1]v │    [https://osu.ppy.sh/mp/%[4]v Match History]\n" +
-			"PRIVMSG %[1]v │    [%[5]v Bot's Source Code]\n" +
+			"PRIVMSG %[1]v │    Skip vote: %[4]v/%[5]v\n" +
+			"PRIVMSG %[1]v │    Start vote: %[6]v/%[7]v\n" +
+			"PRIVMSG %[1]v │    [https://osu.ppy.sh/mp/%[8]v Match History]\n" +
+			"PRIVMSG %[1]v │    [%[9]v Bot's Source Code]\n" +
 			"PRIVMSG %[1]v ┌ Commands:\n" +
 			"PRIVMSG %[1]v │    !q – print host queue\n",
 			channel,
 			config.HostRotation.Enabled,
 			strings.Join(players, ", "),
+			len(skipVoters),
+			int(float32(len(players)) * config.Voting.SkipVoteThreshold),
+			len(startVoters),
+			int(float32(len(players)) * config.Voting.StartVoteThreshold),
 			channel[4:],
 			SourceRepository,
 		)
+	} else if command == "q" && config.HostRotation.Enabled {
+		printHostQueue(channel)
+	} else if command == "skip" && config.HostRotation.Enabled && len(players) > 1 {
+		if username == players[0] {
+			rotateHost()
+		} else {
+			skipVoters[username] = struct{}{}
+			players_required := int(float32(len(players)) * config.Voting.SkipVoteThreshold)
+			if len(skipVoters) >= players_required {
+				rotateHost()
+			} else {
+				fmt.Fprintf(
+					connection, 
+					"PRIVMSG %v Skip %v/%v\n", 
+					channel, 
+					len(skipVoters), 
+					players_required,
+				)
+			}
+		}
+	} else if command == "start" {
+		if username == players[0] {
+			fmt.Fprintf(connection, "PRIVMSG %v !mp start\n", channel)
+		} else {
+			startVoters[username] = struct{}{}
+			players_required := int(float32(len(players)) * config.Voting.StartVoteThreshold)
+			if len(startVoters) >= players_required {
+				fmt.Fprintf(connection, "PRIVMSG %v !mp start\n", channel)
+			} else {
+				fmt.Fprintf(
+					connection, 
+					"PRIVMSG %v Start %v/%v\n", 
+					channel, 
+					len(startVoters), 
+					players_required,
+				)
+			}
+		}
 	}
 }
 
@@ -188,6 +234,8 @@ func printHostQueue(channel string) {
 
 func rotateHost() {
 	players = slices.Concat(players[1:], players[:1])
+	clear(skipVoters)
+	clear(startVoters)
 }
 
 func main() {

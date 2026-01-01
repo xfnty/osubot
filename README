@@ -81,8 +81,7 @@ Available chat commands:
                                 used by the host either starts the match immediatly or begins a 
                                 start countdown.
 
-    !abort                      Aborts match start countdown when used by the host and in addition
-                                skip vote when used by the admin.
+    !abort                      Aborts match start countdown.
 
     !skip                       Starts vote to skip the host or transfers host to the next user in 
                                 the queue if used by the host or the admin.
