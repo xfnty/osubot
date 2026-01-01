@@ -54,7 +54,8 @@ type VotingConfig struct {
 
 type Config struct {
 	Path string                                     `json:"-"`
-	Channel string                                  `json:"-"`
+	SpecifiedChannel string                         `json:"-"`
+	SavedChannel string                             `json:"-"`
 	Server ServerConfig                             `json:"server"`
 	Credentials CredentialsConfig                   `json:"credentials"`
 	LobbyName LobbyNameConfig                       `json:"lobby-name"`
@@ -63,6 +64,19 @@ type Config struct {
 	AutoStart AutoStartConfig                       `json:"auto-start"`
 	Voting VotingConfig                             `json:"voting"`
 }
+
+func SaveChannel(channel string) {
+	if channel == "" {
+		os.Remove(lobbyChannelSavePath)
+	} else {
+		os.WriteFile(lobbyChannelSavePath, []byte(channel), 0666)
+	}
+}
+
+const (
+	defaultConfigPath = "config.json"
+	lobbyChannelSavePath = "lobby.save"
+)
 
 var defaultConfig = &Config{
 	Server: ServerConfig{
@@ -96,16 +110,8 @@ var defaultConfig = &Config{
 	},
 }
 
-const DefaultConfigPath = "config.json"
-
-type CommandLineConfig struct {
-	Config string
-	Channel string
-	Help bool
-}
-
 func LoadConfig() (*Config, error) {
-	cmdCfg, e := GetCommandLineConfig()
+	cmdCfg, e := getcommandLineConfig()
 	if e != nil {
 		return nil, e
 	}
@@ -114,21 +120,37 @@ func LoadConfig() (*Config, error) {
 		os.Exit(0)
 	}
 
-	cfg := &Config{ Path: DefaultConfigPath, Channel: cmdCfg.Channel }
+	savedChannel := ""
+	csFile, e := os.Open(lobbyChannelSavePath)
+	if e == nil {
+		b := make([]byte, 64)
+		n, e := csFile.Read(b)
+		if e == nil {
+			savedChannel = string(b[:n])
+		}
+		csFile.Close()
+	}
+
+	cfg := &Config{ 
+		Path: defaultConfigPath, 
+		SpecifiedChannel: cmdCfg.Channel,
+		SavedChannel: savedChannel,
+	}
+
 	if cmdCfg.Config != "" {
 		cfg.Path = cmdCfg.Config
 	}
 
-	file, e := os.Open(cfg.Path)
+	cFile, e := os.Open(cfg.Path)
 	if e != nil {
-		if cfg.Path == DefaultConfigPath && errors.Is(e, os.ErrNotExist) {
-			SaveConfig(defaultConfig, DefaultConfigPath)
+		if cfg.Path == defaultConfigPath && errors.Is(e, os.ErrNotExist) {
+			SaveConfig(defaultConfig, defaultConfigPath)
 		}
 		return nil, e
 	}
-	defer file.Close()
+	defer cFile.Close()
 
-	decoder := json.NewDecoder(file)
+	decoder := json.NewDecoder(cFile)
 	decoder.DisallowUnknownFields()
 	return cfg, decoder.Decode(cfg)
 }
@@ -144,17 +166,23 @@ func SaveConfig(cfg *Config, path string) error {
 	return encoder.Encode(cfg)
 }
 
-func GetCommandLineConfig() (CommandLineConfig, error) {
+type commandLineConfig struct {
+	Config string
+	Channel string
+	Help bool
+}
+
+func getcommandLineConfig() (commandLineConfig, error) {
 	if len(os.Args) <= 1 {
-		return CommandLineConfig{}, nil
+		return commandLineConfig{}, nil
 	}
 
-	cfg := CommandLineConfig{}
+	cfg := commandLineConfig{}
 	
 	for i := 1; i < len(os.Args); i++ {
 		if os.Args[i] == "-c" {
 			if i >= len(os.Args) - 1 {
-				return CommandLineConfig{}, errors.New("missing config file path")
+				return commandLineConfig{}, errors.New("missing config file path")
 			}
 			cfg.Config = os.Args[i+1]
 			i += 1
@@ -163,11 +191,11 @@ func GetCommandLineConfig() (CommandLineConfig, error) {
 		} else if i == len(os.Args) - 1 {
 			if !strings.HasPrefix(os.Args[i], "#mp_") {
 				e := fmt.Errorf("channel \"%v\" must begin with \"#mp_\"", os.Args[i])
-				return CommandLineConfig{}, e
+				return commandLineConfig{}, e
 			}
 			cfg.Channel = os.Args[i]
 		} else {
-			return CommandLineConfig{}, fmt.Errorf("invalid argument \"%v\"", os.Args[i])
+			return commandLineConfig{}, fmt.Errorf("invalid argument \"%v\"", os.Args[i])
 		}
 	}
 

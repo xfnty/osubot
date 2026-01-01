@@ -11,6 +11,7 @@ type LobbyChannelCallback func(channel string)
 type LobbyPlayersCallback func(channel string, usernames []string)
 type LobbyErrorCallback func(message string)
 type LobbyUserCallback func(channel string, username string)
+type LobbyBeatmapCallback func(channel string, beatmap_id string)
 type LobbyUserMessageCallback func(channel string, username string, message string)
 type LobbyUserCommandCallback func(channel string, username string, command string, params []string)
 
@@ -20,8 +21,15 @@ type LobbyMessageDispatcher struct {
 	JoinError LobbyErrorCallback
 	JoinedLobby LobbyPlayersCallback
 	LeftLobby LobbyChannelCallback
+	LobbyClosed LobbyChannelCallback
 	UserJoined LobbyUserCallback
 	UserLeft LobbyUserCallback
+	HostChanged LobbyUserCallback
+	BeatmapChanged LobbyUserCallback
+	AllPlayersReady LobbyChannelCallback
+	MatchStarted LobbyChannelCallback
+	MatchFinished LobbyChannelCallback
+	MatchAborted LobbyChannelCallback
 	UserMessage LobbyUserMessageCallback
 	UserCommand LobbyUserCommandCallback
 	Owner string
@@ -29,10 +37,14 @@ type LobbyMessageDispatcher struct {
 
 var userJoinedRe *regexp.Regexp
 var userLeftRe *regexp.Regexp
+var hostChangedRe *regexp.Regexp
+var beatmapChangedRe *regexp.Regexp
 
 func init() {
 	userJoinedRe, _ = regexp.Compile(`(\w+) joined in slot (\d+)\.`)
 	userLeftRe, _ = regexp.Compile(`(\w+) left the game\.`)
+	hostChangedRe, _ = regexp.Compile(`(\w+) became the host\.`)
+	beatmapChangedRe, _ = regexp.Compile(`Beatmap changed to: (.+) - (.+) \[(.+)\] \(https://osu\.ppy\.sh/b/(\d+)\)`)
 }
 
 func (d LobbyMessageDispatcher) Dispatch(m Message) {
@@ -62,7 +74,21 @@ func (d LobbyMessageDispatcher) Dispatch(m Message) {
 				d.UserJoined(m.Params[0], g[1])
 			} else if g := userLeftRe.FindStringSubmatch(m.Params[1]); g != nil && d.UserLeft != nil {
 				d.UserLeft(m.Params[0], g[1])
-			}
+			} else if g := hostChangedRe.FindStringSubmatch(m.Params[1]); g != nil && d.HostChanged != nil {
+				d.HostChanged(m.Params[0], g[1])
+			} else if g := beatmapChangedRe.FindStringSubmatch(m.Params[1]); g != nil && d.BeatmapChanged != nil {
+				d.BeatmapChanged(m.Params[0], g[4])
+			} else if m.Params[1] == "All players are ready" && d.AllPlayersReady != nil {
+				d.AllPlayersReady(m.Params[0])
+			} else if m.Params[1] == "The match has started!" && d.MatchStarted != nil {
+				d.MatchStarted(m.Params[0])
+			} else if m.Params[1] == "The match has finished!" && d.MatchFinished != nil {
+				d.MatchFinished(m.Params[0])
+			} else if m.Params[1] == "Aborted the match" && d.MatchAborted != nil {
+				d.MatchAborted(m.Params[0])
+			} else if m.Params[1] == "Closed the match" && d.LobbyClosed != nil {
+				d.LobbyClosed(m.Params[0])
+			} 
 		} else {
 			text_message := strings.Join(m.Params[1:], " ")
 			if len(text_message) > 0 {

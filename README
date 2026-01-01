@@ -53,6 +53,11 @@ User credentials and server address can be acquired in the Legacy API section of
 
     https://osu.ppy.sh/home/account/edit#legacy-api
 
+If the bot successfully creates or joins a lobby it will save the lobby channel in "lobby.save" file
+and will try to rejoin that lobby if it crashes or gets terminated. The [channel] command-line 
+argument overrides this setting. If the argument is not present saved lobby channel is not valid 
+anymore the bot will simply create a new lobby.
+
 Available chat commands:
 
     !tl/timeleft                Prints the time left until the end of the map if the match is 

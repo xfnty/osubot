@@ -15,10 +15,13 @@ var connection irc.Connection
 
 func OnAuthenticated() {
 	util.StdoutLogger.Println("Authenticated as", config.Credentials.Username)
-	if config.Channel == "" {
-		fmt.Fprintf(connection, "PRIVMSG BanchoBot !mp make %v's game\n", config.Credentials.Username)
+
+	if config.SpecifiedChannel != ""  {
+		fmt.Fprintf(connection, "JOIN %v\n", config.SpecifiedChannel)
+	} else if config.SavedChannel != "" {
+		fmt.Fprintf(connection, "JOIN %v\n", config.SavedChannel)
 	} else {
-		fmt.Fprintf(connection, "JOIN %v\n", config.Channel)
+		fmt.Fprintf(connection, "PRIVMSG BanchoBot !mp make %v's game\n", config.Credentials.Username)
 	}
 }
 
@@ -29,13 +32,22 @@ func OnAuthenticationError(message string) {
 
 func OnJoinError(message string) {
 	util.StdoutLogger.Println(message)
-	connection.Close()
+	
+	if config.SpecifiedChannel == "" && config.SavedChannel != "" {
+		config.SavedChannel = ""
+		util.SaveChannel("")
+		fmt.Fprintf(connection, "PRIVMSG BanchoBot !mp make %v's game\n", config.Credentials.Username)
+	} else {
+		connection.Close()
+	}
 }
 
 func OnJoinedLobby(channel string, usernames []string) {
+	util.SaveChannel(channel)
+
 	util.StdoutLogger.Println("Joined", channel)
 
-	if config.Channel == "" {
+	if config.SpecifiedChannel == "" && config.SavedChannel == "" {
 		fmt.Fprintf(connection, "PRIVMSG %v !mp password\n", channel)
 	}
 
@@ -46,6 +58,10 @@ func OnJoinedLobby(channel string, usernames []string) {
 
 func OnLeftLobby(channel string) {
 	util.StdoutLogger.Println("Left", channel)
+}
+
+func OnLobbyClosed(channel string) {
+	util.SaveChannel("")
 	connection.Close()
 }
 
@@ -57,6 +73,33 @@ func OnUserJoined(channel string, username string) {
 func OnUserLeft(channel string, username string) {
 	util.StdoutLogger.Println(username, "left")
 	util.ChatLogger.Println(username, "left")
+}
+
+func OnHostChanged(channel string, username string) {
+	util.StdoutLogger.Println(username, "became the host")
+}
+
+func OnBeatmapChanged(channel string, beatmap_id string) {
+	util.StdoutLogger.Println("Changed beatmap to", beatmap_id)
+}
+
+func OnAllPlayersReady(channel string) {
+	fmt.Fprintf(connection, "PRIVMSG %v !mp start\n", channel)
+}
+
+func OnMatchStarted(channel string) {
+	util.StdoutLogger.Println("Match started")
+	util.ChatLogger.Println("Match started")
+}
+
+func OnMatchFinished(channel string) {
+	util.StdoutLogger.Println("Match finished")
+	util.ChatLogger.Println("Match finished")
+}
+
+func OnMatchAborted(channel string) {
+	util.StdoutLogger.Println("Match aborted")
+	util.ChatLogger.Println("Match aborted")
 }
 
 func OnUserMessage(channel string, username string, message string) {
@@ -113,8 +156,15 @@ func main() {
 		JoinError: OnJoinError,
 		JoinedLobby: OnJoinedLobby,
 		LeftLobby: OnLeftLobby,
+		LobbyClosed: OnLobbyClosed,
 		UserJoined: OnUserJoined,
 		UserLeft: OnUserLeft,
+		HostChanged: OnHostChanged,
+		BeatmapChanged: OnBeatmapChanged,
+		AllPlayersReady: OnAllPlayersReady,
+		MatchStarted: OnMatchStarted,
+		MatchFinished: OnMatchFinished,
+		MatchAborted: OnMatchAborted,
 		UserMessage: OnUserMessage,
 		UserCommand: OnUserCommand,
 	}
