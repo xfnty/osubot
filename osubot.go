@@ -344,6 +344,7 @@ func main() {
 			n, _ := os.Stdin.Read(b)
 			if n == 1 && b[0] != 'n' {
 				fmt.Fprintf(Connection, "PRIVMSG %v !mp close\n", Channel)
+				util.SaveChannel("")
 			}
 			running = false
 		}
