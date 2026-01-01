@@ -12,60 +12,63 @@ import (
 
 const SourceRepository = "https://github.com/xfnty/osubot"
 
-var config *util.Config
-var connection irc.Connection
-var players []string
-var skipVoters = make(map[string]struct{})
-var startVoters = make(map[string]struct{})
+var Config *util.Config
+var Connection irc.Connection
+var Channel string
+var Players []string
+var SkipVoters = make(map[string]struct{})
+var StartVoters = make(map[string]struct{})
 
 func OnAuthenticated() {
-	util.StdoutLogger.Println("Authenticated as", config.Credentials.Username)
+	util.StdoutLogger.Println("Authenticated as", Config.Credentials.Username)
 
-	if config.SpecifiedChannel != ""  {
-		fmt.Fprintf(connection, "JOIN %v\n", config.SpecifiedChannel)
-	} else if config.SavedChannel != "" {
-		fmt.Fprintf(connection, "JOIN %v\n", config.SavedChannel)
+	if Config.SpecifiedChannel != ""  {
+		fmt.Fprintf(Connection, "JOIN %v\n", Config.SpecifiedChannel)
+	} else if Config.SavedChannel != "" {
+		fmt.Fprintf(Connection, "JOIN %v\n", Config.SavedChannel)
 	} else {
 		fmt.Fprintf(
-			connection, 
+			Connection, 
 			"PRIVMSG BanchoBot !mp make %v's game\n", 
-			config.Credentials.Username,
+			Config.Credentials.Username,
 		)
 	}
 }
 
 func OnAuthenticationError(message string) {
 	util.StdoutLogger.Println(message)
-	connection.Close()
+	Connection.Close()
 }
 
 func OnJoinError(message string) {
 	util.StdoutLogger.Println(message)
 	
-	if config.SpecifiedChannel == "" && config.SavedChannel != "" {
-		config.SavedChannel = ""
+	if Config.SpecifiedChannel == "" && Config.SavedChannel != "" {
+		Config.SavedChannel = ""
 		util.SaveChannel("")
 		fmt.Fprintf(
-			connection, 
+			Connection, 
 			"PRIVMSG BanchoBot !mp make %v's game\n", 
-			config.Credentials.Username,
+			Config.Credentials.Username,
 		)
 	} else {
-		connection.Close()
+		Connection.Close()
 	}
 }
 
 func OnJoinedLobby(channel string, usernames []string) {
+	Channel = channel
+	Players = usernames
+
 	util.StdoutLogger.Println("Joined", channel)
 	util.SaveChannel(channel)
-	players = usernames
 
-	if config.SpecifiedChannel == "" && config.SavedChannel == "" {
-		fmt.Fprintf(connection, "PRIVMSG %v !mp password\n", channel)
+	if Config.SpecifiedChannel == "" && Config.SavedChannel == "" {
+		fmt.Fprintf(Connection, "PRIVMSG %v !mp password\n", channel)
 	}
 
-	if i := slices.Index(usernames, config.Credentials.Username); i == -1 {
-		fmt.Fprintf(connection, "PRIVMSG %v !mp invite %v\n", channel, config.Credentials.Username)
+	if i := slices.Index(usernames, Config.Credentials.Username); i == -1 {
+		fmt.Fprintf(Connection, "PRIVMSG %v !mp invite %v\n", channel, Config.Credentials.Username)
 	}
 }
 
@@ -74,56 +77,56 @@ func OnLeftLobby(channel string) {
 
 func OnLobbyClosed(channel string) {
 	util.SaveChannel("")
-	connection.Close()
+	Connection.Close()
 }
 
 func OnUserJoined(channel string, username string) {
-	players = append(players, username)
+	Players = append(Players, username)
 
-	if len(players) == 1 {
-		fmt.Fprintf(connection, "PRIVMSG %v !mp host %v\n", channel, username)
+	if len(Players) == 1 {
+		fmt.Fprintf(Connection, "PRIVMSG %v !mp host %v\n", channel, username)
 	}
 }
 
 func OnUserLeft(channel string, username string) {
-	i := slices.Index(players, username)
-	players = slices.Concat(players[:i], players[i+1:])
+	i := slices.Index(Players, username)
+	Players = slices.Concat(Players[:i], Players[i+1:])
 
-	if len(players) == 0 {
-		fmt.Fprintf(connection, "PRIVMSG %v !mp close\n", channel)
+	if len(Players) == 0 {
+		fmt.Fprintf(Connection, "PRIVMSG %v !mp close\n", channel)
 	}
 }
 
 func OnHostChanged(channel string, username string) {
-	i := slices.Index(players, username)
-	if username != players[0] && config.HostRotation.Enabled {
-		if config.HostRotation.AllowTransfers {
-			phost, nhost := players[0], players[i]
-			players = slices.Concat(
-				players[i:i], 
-				players[1:i], 
-				players[i+1:len(players)], 
-				players[0:0],
+	i := slices.Index(Players, username)
+	if username != Players[0] && Config.HostRotation.Enabled {
+		if Config.HostRotation.AllowTransfers {
+			phost, nhost := Players[0], Players[i]
+			Players = slices.Concat(
+				Players[i:i], 
+				Players[1:i], 
+				Players[i+1:len(Players)], 
+				Players[0:0],
 			)
-			if config.HostRotation.ReportAllowedHostTransfers {
+			if Config.HostRotation.ReportAllowedHostTransfers {
 				fmt.Fprintf(
-					connection, 
+					Connection, 
 					"PRIVMSG %v %v gave host to %v, queue changed to: %v\n", 
 					channel, 
 					phost,
 					nhost,
-					strings.Join(slices.Concat(players[1:], players[:1]), ", "), 
+					strings.Join(slices.Concat(Players[1:], Players[:1]), ", "), 
 				)
 			}
 		} else {
-			fmt.Fprintf(connection, "PRIVMSG %v !mp host %v\n", channel, players[0])
-			if config.HostRotation.ReportIllegalHostTransfers {
+			fmt.Fprintf(Connection, "PRIVMSG %v !mp host %v\n", channel, Players[0])
+			if Config.HostRotation.ReportIllegalHostTransfers {
 				fmt.Fprintf(
-					connection, 
+					Connection, 
 					"PRIVMSG %v %v, the host will be given to the next player automatically" +
 					" because AHR is enabled.\n", 
 					channel,
-					players[0],
+					Players[0],
 				)
 			}
 		}
@@ -134,19 +137,19 @@ func OnBeatmapChanged(channel string, beatmap_id string) {
 }
 
 func OnAllPlayersReady(channel string) {
-	fmt.Fprintf(connection, "PRIVMSG %v !mp start\n", channel)
+	fmt.Fprintf(Connection, "PRIVMSG %v !mp start\n", channel)
 }
 
 func OnMatchStarted(channel string) {
-	clear(skipVoters)
-	clear(startVoters)
+	clear(SkipVoters)
+	clear(StartVoters)
 }
 
 func OnMatchFinished(channel string) {
-	if config.HostRotation.Enabled && len(players) > 1 {
+	if Config.HostRotation.Enabled && len(Players) > 1 {
 		rotateHost()
-		fmt.Fprintf(connection, "PRIVMSG %v !mp host %v\n", channel, players[0])
-		if config.HostRotation.PrintQueueOnMatchEnd {
+		fmt.Fprintf(Connection, "PRIVMSG %v !mp host %v\n", channel, Players[0])
+		if Config.HostRotation.PrintQueueOnMatchEnd {
 			printHostQueue(channel)
 		}
 	}
@@ -162,7 +165,7 @@ func OnUserMessage(channel string, username string, message string) {
 func OnUserCommand(channel string, username string, command string, params []string) {
 	if command == "info" || command == "help" {
 		fmt.Fprintf(
-			connection,
+			Connection,
 			"PRIVMSG %[1]v ┌ Info:\n" +
 			"PRIVMSG %[1]v │    AHR enabled: %[2]v\n" +
 			"PRIVMSG %[1]v │    Players: %[3]v\n" +
@@ -173,50 +176,50 @@ func OnUserCommand(channel string, username string, command string, params []str
 			"PRIVMSG %[1]v ┌ Commands:\n" +
 			"PRIVMSG %[1]v │    !q – print host queue\n",
 			channel,
-			config.HostRotation.Enabled,
-			strings.Join(players, ", "),
-			len(skipVoters),
-			int(float32(len(players)) * config.Voting.SkipVoteThreshold),
-			len(startVoters),
-			int(float32(len(players)) * config.Voting.StartVoteThreshold),
+			Config.HostRotation.Enabled,
+			strings.Join(Players, ", "),
+			len(SkipVoters),
+			int(float32(len(Players)) * Config.Voting.SkipVoteThreshold),
+			len(StartVoters),
+			int(float32(len(Players)) * Config.Voting.StartVoteThreshold),
 			channel[4:],
 			SourceRepository,
 		)
-	} else if command == "q" && config.HostRotation.Enabled {
+	} else if command == "q" && Config.HostRotation.Enabled {
 		printHostQueue(channel)
-	} else if command == "skip" && config.HostRotation.Enabled && len(players) > 1 {
-		if username == players[0] {
+	} else if command == "skip" && Config.HostRotation.Enabled && len(Players) > 1 {
+		if username == Players[0] {
 			rotateHost()
 		} else {
-			skipVoters[username] = struct{}{}
-			players_required := int(float32(len(players)) * config.Voting.SkipVoteThreshold)
-			if len(skipVoters) >= players_required {
+			SkipVoters[username] = struct{}{}
+			Players_required := int(float32(len(Players)) * Config.Voting.SkipVoteThreshold)
+			if len(SkipVoters) >= Players_required {
 				rotateHost()
 			} else {
 				fmt.Fprintf(
-					connection, 
+					Connection, 
 					"PRIVMSG %v Skip %v/%v\n", 
 					channel, 
-					len(skipVoters), 
-					players_required,
+					len(SkipVoters), 
+					Players_required,
 				)
 			}
 		}
 	} else if command == "start" {
-		if username == players[0] {
-			fmt.Fprintf(connection, "PRIVMSG %v !mp start\n", channel)
+		if username == Players[0] {
+			fmt.Fprintf(Connection, "PRIVMSG %v !mp start\n", channel)
 		} else {
-			startVoters[username] = struct{}{}
-			players_required := int(float32(len(players)) * config.Voting.StartVoteThreshold)
-			if len(startVoters) >= players_required {
-				fmt.Fprintf(connection, "PRIVMSG %v !mp start\n", channel)
+			StartVoters[username] = struct{}{}
+			Players_required := int(float32(len(Players)) * Config.Voting.StartVoteThreshold)
+			if len(StartVoters) >= Players_required {
+				fmt.Fprintf(Connection, "PRIVMSG %v !mp start\n", channel)
 			} else {
 				fmt.Fprintf(
-					connection, 
+					Connection, 
 					"PRIVMSG %v Start %v/%v\n", 
 					channel, 
-					len(startVoters), 
-					players_required,
+					len(StartVoters), 
+					Players_required,
 				)
 			}
 		}
@@ -225,17 +228,17 @@ func OnUserCommand(channel string, username string, command string, params []str
 
 func printHostQueue(channel string) {
 	fmt.Fprintf(
-		connection, 
+		Connection, 
 		"PRIVMSG %v Queue: %v\n", 
 		channel, 
-		strings.Join(slices.Concat(players[1:], players[:1]), ", "), 
+		strings.Join(slices.Concat(Players[1:], Players[:1]), ", "), 
 	)
 }
 
 func rotateHost() {
-	players = slices.Concat(players[1:], players[:1])
-	clear(skipVoters)
-	clear(startVoters)
+	Players = slices.Concat(Players[1:], Players[:1])
+	clear(SkipVoters)
+	clear(StartVoters)
 }
 
 func main() {
@@ -243,23 +246,23 @@ func main() {
 	defer util.ShutdownLogging()
 
 	var e error
-	if config, e = util.LoadConfig(); e != nil {
+	if Config, e = util.LoadConfig(); e != nil {
 		util.StdoutLogger.Fatalln(e)
 	}
-	util.StdoutLogger.Printf("Loaded \"%v\"", config.Path)
+	util.StdoutLogger.Printf("Loaded \"%v\"", Config.Path)
 
-	irc.RateLimit = config.Server.RateLimit
+	irc.RateLimit = Config.Server.RateLimit
 
-	connection, e = irc.Connect(
-		config.Server.Host,
-		config.Server.Port,
-		config.Credentials.Username,
-		config.Credentials.Password,
+	Connection, e = irc.Connect(
+		Config.Server.Host,
+		Config.Server.Port,
+		Config.Credentials.Username,
+		Config.Credentials.Password,
 	)
 	if e != nil {
 		util.StdoutLogger.Fatalln(e)
 	}
-	util.StdoutLogger.Println("Connected to", config.Server.Host)
+	util.StdoutLogger.Println("Connected to", Config.Server.Host)
 
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt)
@@ -267,14 +270,14 @@ func main() {
 	messages := make(chan irc.Message)
 
 	go func(){
-		for m, e := connection.Read(); e == nil; m, e = connection.Read() {
+		for m, e := Connection.Read(); e == nil; m, e = Connection.Read() {
 			messages <- m
 		}
 		close(messages)
 	}()
 
 	dispatcher := irc.LobbyMessageDispatcher{
-		Owner: config.Credentials.Username,
+		Owner: Config.Credentials.Username,
 		Authenticated: OnAuthenticated,
 		AuthenticationError: OnAuthenticationError,
 		JoinError: OnJoinError,
@@ -301,12 +304,17 @@ func main() {
 				break
 			}
 			if m.Command == "PING" {
-				fmt.Fprintln(connection, "PONG")
+				fmt.Fprintln(Connection, "PONG")
 				break
 			}
 			dispatcher.Dispatch(m)
 		case <-interrupt:
-			connection.Close()
+			b := make([]byte, 1)
+			fmt.Print("Close the lobby? [Y/n]: ")
+			n, _ := os.Stdin.Read(b)
+			if n == 1 && b[0] != 'n' {
+				fmt.Fprintf(connection, "PRIVMSG %v !mp close\n", Channel)
+			}
 			running = false
 		}
 	}
