@@ -9,9 +9,10 @@ import (
 )
 
 type ServerConfig struct {
-	Host string       `json:"host"`
-	Port int          `json:"port"`
-	RateLimit float32 `json:"rate-limit"`
+	Host string          `json:"host"`
+	Port int             `json:"port"`
+	IrcRateLimit float32 `json:"irc-rate-limit"`
+	ApiRateLimit float32 `json:"api-rate-limit"`
 }
 
 type CredentialsConfig struct {
@@ -85,7 +86,8 @@ var defaultConfig = &Config{
 	Server: ServerConfig{
 		Host: "irc.ppy.sh",
 		Port: 6667,
-		RateLimit: 4,
+		IrcRateLimit: 4,
+		ApiRateLimit: 2,
 	},
 	LobbyName: LobbyNameConfig{
 		Template: "{min}-{max}* | Auto Host Rotate",

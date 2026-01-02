@@ -13,6 +13,7 @@ import (
 
 const SourceRepository = "https://github.com/xfnty/osubot"
 
+var Interrupt = make(chan os.Signal, 1)
 var Config *util.Config
 var Connection irc.Connection
 var Channel string
@@ -60,6 +61,8 @@ func OnJoinError(message string) {
 func OnJoinedLobby(channel string, usernames []string) {
 	Channel = channel
 	Players = usernames
+
+	signal.Notify(Interrupt, os.Interrupt)
 
 	util.StdoutLogger.Println("Joined", channel)
 	util.SaveChannel(channel)
@@ -252,9 +255,10 @@ func main() {
 	}
 	util.StdoutLogger.Printf("Loaded \"%v\"", Config.Path)
 
-	irc.RateLimit = Config.Server.RateLimit
+	irc.RateLimit = Config.Server.IrcRateLimit
 
-	if e = api.Init(Config.Credentials.ApiId, Config.Credentials.ApiSecret); e != nil {
+	e = api.Init(Config.Credentials.ApiId, Config.Credentials.ApiSecret, Config.Server.ApiRateLimit)
+	if e != nil {
 		util.StdoutLogger.Fatalln(e)
 	}
 
@@ -294,11 +298,7 @@ func main() {
 	}
 	util.StdoutLogger.Println("Connected to", Config.Server.Host)
 
-	interrupt := make(chan os.Signal, 1)
-	signal.Notify(interrupt, os.Interrupt)
-
 	messages := make(chan irc.Message)
-
 	go func(){
 		for m, e := Connection.Read(); e == nil; m, e = Connection.Read() {
 			messages <- m
@@ -338,7 +338,7 @@ func main() {
 				break
 			}
 			dispatcher.Dispatch(m)
-		case <-interrupt:
+		case <-Interrupt:
 			b := make([]byte, 1)
 			fmt.Print("Close the lobby? [Y/n]: ")
 			n, _ := os.Stdin.Read(b)

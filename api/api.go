@@ -28,8 +28,11 @@ var tokenRefreshPayload string
 var token tokenResponse
 var tokenMutex sync.Mutex
 var tokenRefreshTicker *time.Ticker
+var requestRateLimiter *time.Ticker
 
-func Init(id string, secret string) error {
+func Init(id string, secret string, rateLimit float32) error {
+	requestRateLimiter = time.NewTicker(time.Duration(1 / rateLimit) * time.Second)
+
 	tokenRefreshPayload = fmt.Sprintf(
 		"client_id=%v&client_secret=%v&grant_type=client_credentials&scope=public", 
 		id, 
@@ -43,10 +46,10 @@ func Init(id string, secret string) error {
 	tokenRefreshTicker = time.NewTicker(time.Duration(token.Lifetime) * time.Second)
 	go func(){
 		for _ = range tokenRefreshTicker.C {
-			for e := refreshToken(); e != nil; {
+			for e, i := refreshToken(), 1; e != nil; i++ {
 				tokenRefreshTicker.Stop()
 				util.StdoutLogger.Println("Failed to refresh API token:", e)
-				time.Sleep(15)
+				time.Sleep(time.Duration(5 * i) * time.Second)
 			}
 			tokenRefreshTicker.Reset(time.Duration(token.Lifetime) * time.Second)
 		}
@@ -74,6 +77,7 @@ func makeRequest(retval any, method string, payload string, path string, args ..
 		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
 
+	<-requestRateLimiter.C
 	response, e := client.Do(request)
 	if e != nil {
 		return e
@@ -88,7 +92,8 @@ func makeRequest(retval any, method string, payload string, path string, args ..
 	var buffer bytes.Buffer
 	e = json.Indent(&buffer, b, "", "\t")
 	if e == nil {
-		util.ApiLogger.Printf("%v %v\n%v\n\n", method, path, buffer.String())
+		// util.ApiLogger.Printf("%v %v\n%v\n\n", method, path, buffer.String())
+		util.StdoutLogger.Println(method, path)
 	}
 
 	return json.Unmarshal(b, retval)
