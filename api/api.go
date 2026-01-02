@@ -31,7 +31,8 @@ var tokenRefreshTicker *time.Ticker
 var requestRateLimiter *time.Ticker
 
 func Init(id string, secret string, rateLimit float32) error {
-	requestRateLimiter = time.NewTicker(time.Duration(1 / rateLimit) * time.Second)
+	requestInterval := time.Duration(float64(1 / rateLimit) * float64(time.Second))
+	requestRateLimiter = time.NewTicker(requestInterval)
 
 	tokenRefreshPayload = fmt.Sprintf(
 		"client_id=%v&client_secret=%v&grant_type=client_credentials&scope=public", 
@@ -92,8 +93,7 @@ func makeRequest(retval any, method string, payload string, path string, args ..
 	var buffer bytes.Buffer
 	e = json.Indent(&buffer, b, "", "\t")
 	if e == nil {
-		// util.ApiLogger.Printf("%v %v\n%v\n\n", method, path, buffer.String())
-		util.StdoutLogger.Println(method, path)
+		util.ApiLogger.Printf("%v %v\n%v\n\n", method, path, buffer.String())
 	}
 
 	return json.Unmarshal(b, retval)

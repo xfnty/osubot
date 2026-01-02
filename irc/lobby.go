@@ -2,6 +2,7 @@ package irc
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
 	"github.com/google/shlex"
 )
@@ -11,7 +12,7 @@ type LobbyChannelCallback func(channel string)
 type LobbyPlayersCallback func(channel string, usernames []string)
 type LobbyErrorCallback func(message string)
 type LobbyUserCallback func(channel string, username string)
-type LobbyBeatmapCallback func(channel string, beatmap_id string)
+type LobbyBeatmapCallback func(channel string, id int)
 type LobbyUserMessageCallback func(channel string, username string, message string)
 type LobbyUserCommandCallback func(channel string, username string, command string, params []string)
 
@@ -25,7 +26,7 @@ type LobbyMessageDispatcher struct {
 	UserJoined LobbyUserCallback
 	UserLeft LobbyUserCallback
 	HostChanged LobbyUserCallback
-	BeatmapChanged LobbyUserCallback
+	BeatmapChanged LobbyBeatmapCallback
 	AllPlayersReady LobbyChannelCallback
 	MatchStarted LobbyChannelCallback
 	MatchFinished LobbyChannelCallback
@@ -77,7 +78,9 @@ func (d LobbyMessageDispatcher) Dispatch(m Message) {
 			} else if g := hostChangedRe.FindStringSubmatch(m.Params[1]); g != nil && d.HostChanged != nil {
 				d.HostChanged(m.Params[0], g[1])
 			} else if g := beatmapChangedRe.FindStringSubmatch(m.Params[1]); g != nil && d.BeatmapChanged != nil {
-				d.BeatmapChanged(m.Params[0], g[4])
+				if id, e := strconv.Atoi(g[4]); e == nil {
+					d.BeatmapChanged(m.Params[0], id)
+				}
 			} else if m.Params[1] == "All players are ready" && d.AllPlayersReady != nil {
 				d.AllPlayersReady(m.Params[0])
 			} else if m.Params[1] == "The match has started!" && d.MatchStarted != nil {

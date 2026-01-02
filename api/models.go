@@ -7,13 +7,6 @@ type User struct {
 	IsOnline bool      `json:"is_online"`
 }
 
-type Beatmap struct {
-	Name string      `json:"version"`
-	Id int           `json:"id"`
-	BeatmapSetId int `json:"beatmapset_id"`
-	Stars float32    `json:"difficulty_rating"`
-}
-
 type BeatmapSet struct {
 	Id int               `json:"id"`
 	Title string        `json:"title"`
@@ -21,6 +14,14 @@ type BeatmapSet struct {
 	Artist string        `json:"artist"`
 	ArtistUnicode string `json:"artist_unicode"`
 	Creator string       `json:"creator"`
+}
+
+type Beatmap struct {
+	Name string            `json:"version"`
+	Id int                 `json:"id"`
+	BeatmapSetId int       `json:"beatmapset_id"`
+	Stars float32          `json:"difficulty_rating"`
+	BeatmapSet *BeatmapSet `json:"beatmapset"`
 }
 
 type Score struct {

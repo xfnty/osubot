@@ -69,6 +69,8 @@ func OnJoinedLobby(channel string, usernames []string) {
 
 	if Config.SpecifiedChannel == "" && Config.SavedChannel == "" {
 		fmt.Fprintf(Connection, "PRIVMSG %v !mp password\n", channel)
+		fmt.Fprintf(Connection, "PRIVMSG %v !mp mods Freemod\n", channel)
+		fmt.Fprintf(Connection, "PRIVMSG %v !mp set 0 0 8\n", channel)
 	}
 
 	if i := slices.Index(usernames, Config.Credentials.IrcUsername); i == -1 {
@@ -137,7 +139,20 @@ func OnHostChanged(channel string, username string) {
 	}
 }
 
-func OnBeatmapChanged(channel string, beatmap_id string) {
+func OnBeatmapChanged(channel string, id int) {
+	b, e := api.GetBeatmap(id)
+	if e != nil {
+		util.StdoutLogger.Println(e)
+		return
+	}
+
+	util.StdoutLogger.Printf(
+		"%v - %v [%v] (%.2f*)\n", 
+		b.BeatmapSet.Artist, 
+		b.BeatmapSet.Title, 
+		b.Name, 
+		b.Stars,
+	)
 }
 
 func OnAllPlayersReady(channel string) {
@@ -260,31 +275,6 @@ func main() {
 	e = api.Init(Config.Credentials.ApiId, Config.Credentials.ApiSecret, Config.Server.ApiRateLimit)
 	if e != nil {
 		util.StdoutLogger.Fatalln(e)
-	}
-
-	u, e := api.GetUser(Config.Credentials.IrcUsername)
-	if e != nil {
-		util.StdoutLogger.Fatalln(e)
-	}
-
-	scores, e := api.GetUserScores(u.Id, 10, api.BestScores)
-	if e != nil {
-		util.StdoutLogger.Fatalln(e)
-	}
-
-	fmt.Println(u.Username + "'s best scores:")
-	for _, s := range scores {
-		fmt.Printf(
-			"%.1f x%v %v %.0fpp on %v - %v [%v] (%.2f*)\n", 
-			s.Accuracy * 100, 
-			s.MaxCombo, 
-			s.Rank, 
-			*s.Pp,
-			s.BeatmapSet.Artist,
-			s.BeatmapSet.Title,
-			s.Beatmap.Name,
-			s.Beatmap.Stars,
-		)
 	}
 
 	Connection, e = irc.Connect(

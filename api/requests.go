@@ -50,3 +50,8 @@ func GetUserScores(id int, count int, query UserScoreQuery) (scores []Score, e e
 	}
 	return
 }
+
+func GetBeatmap(id int) (beatmap Beatmap, e error) {
+	e = makeRequest(&beatmap, "GET", "", "%v/beatmaps/%v", v2RootEndpoint, id)
+	return
+}

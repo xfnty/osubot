@@ -44,7 +44,7 @@ func Connect(host string, port int, username string, password string) (Connectio
 		for b := range c.requests {
 			util.IrcLogger.Println("Sent", strconv.Quote(string(b)))
 			c.conn.Write(b)
-			time.Sleep(time.Duration(1 / RateLimit) * time.Second)
+			time.Sleep(time.Duration(float64(1 / RateLimit) * float64(time.Second)))
 		}
 	}()
 
