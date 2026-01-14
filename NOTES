@@ -105,3 +105,13 @@ Joining and creating lobbies:
 
     The dispatcher should join and close newly created lobbies that are not in the MAKE list because 
     their requests timed out and were removed from the list.
+
+Execution context:
+
+    The bot (single .exe) will reference tho following files:
+        - config.json (contains persistent configuration you write once and forget about)
+        - cache/token.json (cached public API token which is valid for 24h)
+        - cache/lobbies.json (cached lobby channels the bot the bot has opened but not closed in case the bot crashes)
+        - logs/sys/DD-MM-YYYY_HH.MM.SS.txt (console logs with possible crash reports)
+        - logs/irc/DD-MM-YYYY_HH.MM.SS_XXXXXX.txt (IRC message dump from a specific lobby for debug purposes)
+        - logs/chat/DD-MM-YYYY_HH.MM.SS_XXXXXX.txt (lobby chat log)
