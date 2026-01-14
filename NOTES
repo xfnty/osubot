@@ -112,6 +112,22 @@ Execution context:
         - config.json (contains persistent configuration you write once and forget about)
         - cache/token.json (cached public API token which is valid for 24h)
         - cache/lobbies.json (cached lobby channels the bot the bot has opened but not closed in case the bot crashes)
+        - cache/bans.json (list of banned players)
         - logs/sys/DD-MM-YYYY_HH.MM.SS.txt (console logs with possible crash reports)
         - logs/irc/DD-MM-YYYY_HH.MM.SS_XXXXXX.txt (IRC message dump from a specific lobby for debug purposes)
         - logs/chat/DD-MM-YYYY_HH.MM.SS_XXXXXX.txt (lobby chat log)
+
+    The bot will be able to manage up to 4 lobbies. It will also host a web page where user will be able to control the lobbies.
+
+    The Web Page should display the following information about each lobby:
+        - Beatmap (selected/none, artist, title, difficulty name, star rating and a link)
+        - Player list/queue (avatar, username, rank, profile link, badges: AUtoskip, Out Of Order)
+        - Settings badges (AHR, Difficulty Constraint, difficulty range)
+        - Chat messages
+
+    It should allow the following actions:
+        - Redefining the queue
+        - Toggling AHR and DC
+        - Changing difficulty range
+        - Skipping players
+        - Kicking out and banning players
