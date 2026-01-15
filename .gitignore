@@ -1,6 +1,9 @@
 # Files
-*.env
 *.exe
-*.log
-*.save
-config.json
+*.json
+*.ignore
+
+# Folders
+*.ignore
+/logs/
+/cache/

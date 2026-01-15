@@ -112,7 +112,6 @@ Execution context:
         - config.json (contains persistent configuration you write once and forget about)
         - cache/token.json (cached public API token which is valid for 24h)
         - cache/lobbies.json (cached lobby channels the bot the bot has opened but not closed in case the bot crashes)
-        - cache/bans.json (list of banned players)
         - logs/sys/DD-MM-YYYY_HH.MM.SS.txt (console logs with possible crash reports)
         - logs/irc/DD-MM-YYYY_HH.MM.SS_XXXXXX.txt (IRC message dump from a specific lobby for debug purposes)
         - logs/chat/DD-MM-YYYY_HH.MM.SS_XXXXXX.txt (lobby chat log)
