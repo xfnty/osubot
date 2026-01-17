@@ -4,16 +4,20 @@ import (
 	"fmt"
 	"context"
 	"net/http"
+
+	"osubot/log"
+	"osubot/osu/api"
 )
 
 type Dashboard struct {
 	Address string
+	Owner api.User
 	server http.Server
 	router *http.ServeMux
 }
 
-func (d *Dashboard) handleIndex(rw http.ResponseWriter, req *http.Request) {
-	fmt.Fprintf(rw, "Welcome")
+func (d Dashboard) Link() string {
+	return "http://" + d.Address
 }
 
 func (d *Dashboard) Run(ctx context.Context) error {
@@ -31,6 +35,8 @@ func (d *Dashboard) Run(ctx context.Context) error {
 		close(errorChan)
 	}()
 
+	log.Println("serving dashboard on ", d.Link())
+
 	var e error
 	select {
 	case e = <-errorChan:
@@ -39,4 +45,9 @@ func (d *Dashboard) Run(ctx context.Context) error {
 		e = ctx.Err()
 	}
 	return e
+}
+
+func (d *Dashboard) handleIndex(rw http.ResponseWriter, req *http.Request) {
+	rw.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprintf(rw, "Owner:<br><img src=\"%v\">", d.Owner.Avatar)
 }
