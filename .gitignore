@@ -2,9 +2,6 @@
 *.exe
 *.json
 *.ignore
-crash.txt
 
 # Folders
-*.ignore
-/logs/
-/cache/
+*.ignore/

@@ -2,81 +2,132 @@ package main
 
 import (
 	"os"
+	"net"
 	"fmt"
-	"context"
-	"os/signal"
+	"bufio"
+	"unicode"
+	"strings"
 	"encoding/json"
-	"runtime/debug"
-
-	"github.com/pkg/browser"
-
-	"osubot/log"
-	"osubot/osu/api"
-	"osubot/dashboard"
 )
 
-var config Config
-var client api.Client
-var owner api.User
-
 func main() {
-	defer Recover()
+	var cfg config
+	var irc ircConn
 
-	var e error
-	if config, e = LoadConfigFile("config.json"); e != nil {
-		panic(e)
-	}
-
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer cancel()
-
-	client = api.NewClient(config.Api.Address, config.Api.Id, config.Api.Secret)
-
-	if owner, e = client.GetUserByName(ctx, config.Irc.Username); e != nil {
-		panic(e)
-	}
-
-	dashb := dashboard.Dashboard{ Address: config.Dashboard.Address, Owner: owner }
-	go dashb.Run(ctx)
-	if config.Dashboard.Open {
-		browser.OpenURL(dashb.Link())
-	}
-
-	<-ctx.Done()
-	log.Println("done")
-}
-
-func Recover() {
-	if r := recover(); r != nil {
-		m := []byte(fmt.Sprintf("panic: %v\n\n%v", r, string(debug.Stack())))
-		os.WriteFile("crash.txt", m, 0666)
-		os.Stderr.Write(m)
-	}
-}
-
-type Config struct {
-	Irc struct {
-		Address string  `json:"address"`
-		Username string `json:"username"`
-		Password string `json:"password"`
-	} `json:"irc"`
-	Api struct {
-		Address string   `json:"address"`
-		Id string     `json:"id"`
-		Secret string `json:"secret"`
-	} `json:"api"`
-	Dashboard struct {
-		Address string `json:"address"`
-		Open bool      `json:"open"`
-	} `json:"dashboard"`
-}
-
-func LoadConfigFile(path string) (config Config, e error) {
-	var b []byte
-	b, e = os.ReadFile(path)
+	fmt.Println("Loading", configPath)
+	b, e := os.ReadFile(configPath)
 	if e != nil {
+		panic(e)
+	}
+	if e = json.Unmarshal(b, &cfg); e != nil {
+		panic(e)
+	}
+
+	fmt.Println("Connecting to", cfg.IRC.Addr)
+	irc.Conn, e = net.Dial("tcp", cfg.IRC.Addr)
+	if e != nil {
+		panic(e)
+	}
+	irc.scanner = bufio.NewScanner(irc.Conn)
+	defer irc.Close()
+
+	fmt.Println("Authenticating as", cfg.IRC.User)
+	fmt.Fprintf(irc, "PASS %v\nNICK %v\n", cfg.IRC.Pass, cfg.IRC.User)
+	for {
+		m, e := irc.get()
+		if e != nil {
+			panic(e)
+		}
+		if m.cmd == "001" {
+			break
+		}
+		fmt.Printf("%v: %v\n", m.src, strings.Join(m.args, " "))
+	}
+
+	for m, e := irc.get(); e == nil; m, e = irc.get() {
+		if m.cmd == "PING" {
+			fmt.Fprintf(irc, "PONG\n")
+		} else if m.cmd != "QUIT" {
+			fmt.Println(m)
+		}
+	}
+}
+
+const (
+	configPath = "config.json"
+)
+
+type config struct {
+	IRC struct {
+		Addr string `json:"address"`
+		User string `json:"username"`
+		Pass string `json:"password"`
+	} `json:"irc"`
+}
+
+type ircConn struct {
+	net.Conn
+	scanner *bufio.Scanner
+}
+
+type ircMsg struct {
+	src, cmd string
+	args []string
+}
+
+func (irc ircConn) get() (m ircMsg, e error) {
+	if !irc.scanner.Scan() {
+		e = irc.scanner.Err()
+		if e == nil {
+			e = net.ErrClosed
+		}
 		return
 	}
-	e = json.Unmarshal(b, &config)
+	l := irc.scanner.Text()
+	c := 0
+	if c = strings.IndexFunc(l, notSpace); c == -1 {
+		return
+	}
+	l = l[c:]
+	if strings.HasPrefix(l, ":") {
+		l = l[1:]
+		if c = strings.IndexFunc(l, unicode.IsSpace); c == -1 {
+			return
+		}
+		if b := strings.IndexRune(l[:c], '!'); b != -1 {
+			m.src = l[:b]
+		} else {
+			m.src = l[:c]
+		}
+		l = l[c:]
+		if c = strings.IndexFunc(l, notSpace); c == -1 {
+			return
+		}
+		l = l[c:]
+	}
+	if c = strings.IndexFunc(l, unicode.IsSpace); c == -1 {
+		c = len(l)
+	}
+	m.cmd = l[:c]
+	l = l[c:]
+	for {
+		if c = strings.IndexFunc(l, notSpace); c == -1 {
+			break
+		}
+		l = l[c:]
+		if strings.HasPrefix(l, ":") {
+			m.args = append(m.args, l[1:])
+			break
+		}
+		if c = strings.IndexFunc(l, unicode.IsSpace); c == -1 {
+			c = len(l)
+		}
+		m.args = append(m.args, l[:c])
+		l = l[c:]
+	}
 	return
+}
+
+func notSpace(r rune) bool {
+	return !unicode.IsSpace(r)
 }
