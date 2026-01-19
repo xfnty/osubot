@@ -65,7 +65,7 @@ func Dispatch(m Msg, d Dispatcher) {
 			}
 		} else {
 			text := strings.Join(m.Args[1:], " ")
-			if len(text) > 0 && text[0] == '!' {
+			if len(text) > 1 && text[0] == '!' {
 				if args, e := shlex.Split(text); e == nil {
 					d.OnUserCommand(m.Args[0], m.Src, args[0][1:], args[1:])
 				}

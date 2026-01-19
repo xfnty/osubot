@@ -2,16 +2,20 @@ package main
 
 import (
 	"fmt"
+	"context"
 	"strings"
+	"runtime/debug"
 
 	"osubot"
-	"osubot/irc"
+	"osubot/osu/api"
+	"osubot/osu/irc"
 )
 
 type Bot struct {
 	config osubot.Config
 	cache osubot.Cache
 	conn irc.Conn
+	api *api.Client
 	queue map[string]struct{}
 }
 
@@ -74,6 +78,15 @@ func (b *Bot) OnUserJoined(lobby, user string) {
 		fmt.Fprintf(b.conn, "PRIVMSG %v !mp host %v\n", lobby, user)
 	}
 	fmt.Println(user, "joined", lobby)
+
+	go func(){
+		u, e := b.api.GetUserByName(context.Background(), user)
+		if e != nil {
+			fmt.Println("Failed to get account info for", user)
+			return
+		}
+		fmt.Printf("User %v: id=%v country=%v online=%v\n", u.Username, u.ID, u.CountryCode, u.IsOnline)
+	}()
 }
 
 func (b *Bot) OnUserLeft(lobby, user string) {
@@ -91,6 +104,15 @@ func (b *Bot) OnHostChanged(lobby, user string) {
 
 func (b *Bot) OnBeatmapChanged(lobby, artist, title, difficulty string, id int) {
 	fmt.Println("Selected", artist, "-", title)
+
+	go func(){
+		bm, e := b.api.GetBeatmap(context.Background(), id)
+		if e != nil {
+			fmt.Println("Failed to get beatmap info for", id)
+			return
+		}
+		fmt.Println(bm, bm.BeatmapSet)
+	}()
 }
 
 func (b *Bot) OnAllPlayersReady(lobby string) {
@@ -119,6 +141,8 @@ func (b *Bot) OnUserCommand(lobby, user, command string, args []string) {
 }
 
 func main() {
+	defer RecoverMain()
+
 	var e error
 	bot := Bot{ queue: make(map[string]struct{}) }
 
@@ -126,6 +150,8 @@ func main() {
 	if e = bot.config.LoadFile(configPath); e != nil {
 		panic(e)
 	}
+
+	bot.api = api.NewClient(bot.config.API.Addr, bot.config.API.ID, bot.config.API.Secret)
 
 	fmt.Println("Loading", cachePath)
 	bot.cache.LoadFile(cachePath)
@@ -145,3 +171,10 @@ const (
 	configPath = "config.json"
 	cachePath = "cache.json"
 )
+
+func RecoverMain() {
+	if r := recover(); r != nil {
+		fmt.Printf("panic: %v\n\n%v", r, string(debug.Stack()))
+		// fmt.Scan()
+	}
+}

@@ -11,6 +11,11 @@ type Config struct {
 		User string `json:"username"`
 		Pass string `json:"password"`
 	} `json:"irc"`
+	API struct {
+		Addr string `json:"address"`
+		ID string `json:"id"`
+		Secret string `json:"secret"`
+	} `json:"api"`
 }
 
 func (c *Config) LoadFile(path string) error {
