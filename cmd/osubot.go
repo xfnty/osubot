@@ -1,17 +1,16 @@
 package main
 
 import (
-	"os"
 	"fmt"
 	"strings"
-	"encoding/json"
 
+	"osubot"
 	"osubot/irc"
 )
 
 type Bot struct {
-	config config
-	cache cache
+	config osubot.Config
+	cache osubot.Cache
 	conn irc.Conn
 	queue map[string]struct{}
 }
@@ -43,7 +42,7 @@ func (b *Bot) OnJoined(lobby string, players []string) {
 	}
 
 	b.cache.Lobby = lobby
-	SaveJSON(cachePath, b.cache)
+	b.cache.SaveFile(cachePath)
 
 	fmt.Println("Joined", lobby)
 }
@@ -53,7 +52,7 @@ func (b *Bot) OnJoinError(e string) {
 
 	if b.cache.Lobby != "" {
 		b.cache.Lobby = ""
-		SaveJSON(cachePath, b.cache)
+		b.cache.SaveFile(cachePath)
 		fmt.Fprintf(b.conn, "PRIVMSG BanchoBot !mp make %v's game\n", b.config.IRC.User)
 	} else {
 		b.conn.Close()
@@ -65,7 +64,7 @@ func (b *Bot) OnLeft(lobby string) {
 
 func (b *Bot) OnClosed(lobby string) {
 	b.cache.Lobby = ""
-	SaveJSON(cachePath, b.cache)
+	b.cache.SaveFile(cachePath)
 	b.conn.Close()
 }
 
@@ -124,12 +123,12 @@ func main() {
 	bot := Bot{ queue: make(map[string]struct{}) }
 
 	fmt.Println("Loading", configPath)
-	if e = LoadJSON(configPath, &bot.config); e != nil {
+	if e = bot.config.LoadFile(configPath); e != nil {
 		panic(e)
 	}
 
 	fmt.Println("Loading", cachePath)
-	LoadJSON(cachePath, &bot.cache)
+	bot.cache.LoadFile(cachePath)
 
 	fmt.Println("Connecting to", bot.config.IRC.Addr)
 	bot.conn, e = irc.Connect(bot.config.IRC.Addr)
@@ -146,34 +145,3 @@ const (
 	configPath = "config.json"
 	cachePath = "cache.json"
 )
-
-type config struct {
-	IRC struct {
-		Addr string `json:"address"`
-		User string `json:"username"`
-		Pass string `json:"password"`
-	} `json:"irc"`
-}
-
-type cache struct {
-	Lobby string `json:"lobby"`
-}
-
-func LoadJSON(path string, object any) error {
-	b, e := os.ReadFile(path)
-	if e != nil {
-		return e
-	}
-	if e = json.Unmarshal(b, object); e != nil {
-		return e
-	}
-	return nil
-}
-
-func SaveJSON(path string, object any) error {
-	b, e := json.MarshalIndent(object, "", "\t")
-	if e != nil {
-		return e
-	}
-	return os.WriteFile(path, b, 0666)
-}
