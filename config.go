@@ -20,6 +20,10 @@ type Config struct {
 		Enabled bool    `json:"enabled"`
 		PrintQueue bool `json:"print_queue"`
 	} `json:"ahr"`
+	DC struct {
+		Enabled bool `json:"enabled"`
+		Range [2]float32 `json:"range"`
+	} `json:"diffuclty_constraint"`
 }
 
 func (c *Config) LoadFile(path string) error {
