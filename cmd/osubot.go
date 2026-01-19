@@ -25,6 +25,8 @@ type Bot struct {
 	lobby string
 	queue []string
 	beatmap api.Beatmap
+	matchInProgress bool
+	matchStartTime time.Time
 }
 
 func (b *Bot) OnAuthenticated() {
@@ -232,6 +234,12 @@ func (b *Bot) OnAllPlayersReady(lobby string) {
 
 func (b *Bot) OnMatchStarted(lobby string) {
 	fmt.Println("The match has started")
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	b.matchInProgress = true
+	b.matchStartTime = time.Now()
 }
 
 func (b *Bot) OnMatchFinished(lobby string) {
@@ -239,6 +247,8 @@ func (b *Bot) OnMatchFinished(lobby string) {
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
+	b.matchInProgress = false
 
 	if b.config.AHR.Enabled {
 		b.rotateHost(lobby)
@@ -250,6 +260,11 @@ func (b *Bot) OnMatchFinished(lobby string) {
 
 func (b *Bot) OnMatchAborted(lobby string) {
 	fmt.Println("The match was aborted")
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	b.matchInProgress = false
 }
 
 func (b *Bot) OnUserMessage(lobby, user, message string) {
@@ -267,6 +282,15 @@ func (b *Bot) OnUserCommand(lobby, user, cmd string, args []string) {
 	} else if (cmd == "s" || cmd == "skip") && (user == b.queue[0] || user == b.config.IRC.User) {
 		b.rotateHost(lobby)
 		fmt.Println(user, "skipped host")
+	} else if (cmd == "tl" || cmd == "timeleft") && b.matchInProgress && b.beatmap.ID != 0 {
+		tl := b.matchStartTime.Add(time.Duration(b.beatmap.Length) * time.Second).Sub(time.Now())
+		fmt.Fprintf(
+			b.conn,
+			"PRIVMSG %v Time left: %vm %vs\n",
+			lobby,
+			int(tl.Minutes()),
+			int(tl.Seconds()) % 60,
+		)
 	} else if cmd == "ahr" && user == b.config.IRC.User {
 		if len(args) == 0 {
 			fmt.Fprintf(b.conn, "PRIVMSG %v AHR enabled: %v\n", lobby, b.config.AHR.Enabled)
@@ -332,6 +356,7 @@ func (b *Bot) OnUserCommand(lobby, user, cmd string, args []string) {
 			"PRIVMSG %[1]v ┌ Commands:\n" +
 			"PRIVMSG %[1]v │    !q/queue – print host queue\n" +
 			"PRIVMSG %[1]v │    !s/skip – skip host\n" +
+			"PRIVMSG %[1]v │    !tl/timeleft – print estimated time until the end of the song\n" +
 			"PRIVMSG %[1]v │    !ahr [on/off] – show/enable/disable host rotation\n" +
 			"PRIVMSG %[1]v │    !dc [on/off] – show/enable/disable difficulty constraint\n" +
 			"PRIVMSG %[1]v │    !dcr [min max] – show/define difficulty range\n",
@@ -358,7 +383,7 @@ func (b *Bot) printQueue(lobby string) {
 
 func (b *Bot) rotateHost(lobby string) {
 	b.queue = slices.Concat(b.queue[1:], b.queue[:1])
-	fmt.Printf("Rotated host queue: %v, host is %v\n", formatQueue(b.queue), b.queue[0])
+	fmt.Printf("Rotated host queue: %v\n", formatQueue(b.queue))
 	fmt.Fprintf(b.conn, "PRIVMSG %v !mp host %v\n", lobby, b.queue[0])
 }
 
