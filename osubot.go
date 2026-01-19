@@ -2,59 +2,149 @@ package main
 
 import (
 	"os"
-	"net"
 	"fmt"
-	"bufio"
-	"unicode"
 	"strings"
 	"encoding/json"
+
+	"osubot/irc"
 )
 
+type Bot struct {
+	config config
+	cache cache
+	conn irc.Conn
+	queue map[string]struct{}
+}
+
+func (b *Bot) OnAuthenticated() {
+	if b.cache.Lobby != "" {
+		fmt.Println("Attempting to rejoin", b.cache.Lobby)
+		fmt.Fprintf(b.conn, "JOIN %v\n", b.cache.Lobby)
+	} else {
+		fmt.Println("Creating new lobby")
+		fmt.Fprintf(b.conn, "PRIVMSG BanchoBot !mp make %v's game\n", b.config.IRC.User)
+	}
+}
+
+func (b *Bot) OnAuthenticationError(e string) {
+	fmt.Println(e)
+	b.conn.Close()
+}
+
+func (b *Bot) OnJoined(lobby string, players []string) {
+	for _, u := range players {
+		b.queue[u] = struct{}{}
+	}
+
+	if b.cache.Lobby != lobby {
+		fmt.Fprintf(b.conn, "PRIVMSG %v !mp password\n", lobby)
+		fmt.Fprintf(b.conn, "PRIVMSG %v !mp size 8\n", lobby)
+		fmt.Fprintf(b.conn, "PRIVMSG %v !mp invite %v\n", lobby, b.config.IRC.User)
+	}
+
+	b.cache.Lobby = lobby
+	SaveJSON(cachePath, b.cache)
+
+	fmt.Println("Joined", lobby)
+}
+
+func (b *Bot) OnJoinError(e string) {
+	fmt.Println(e)
+
+	if b.cache.Lobby != "" {
+		b.cache.Lobby = ""
+		SaveJSON(cachePath, b.cache)
+		fmt.Fprintf(b.conn, "PRIVMSG BanchoBot !mp make %v's game\n", b.config.IRC.User)
+	} else {
+		b.conn.Close()
+	}
+}
+
+func (b *Bot) OnLeft(lobby string) {
+}
+
+func (b *Bot) OnClosed(lobby string) {
+	b.cache.Lobby = ""
+	SaveJSON(cachePath, b.cache)
+	b.conn.Close()
+}
+
+func (b *Bot) OnUserJoined(lobby, user string) {
+	b.queue[user] = struct{}{}
+	if len(b.queue) == 1 {
+		fmt.Fprintf(b.conn, "PRIVMSG %v !mp host %v\n", lobby, user)
+	}
+	fmt.Println(user, "joined", lobby)
+}
+
+func (b *Bot) OnUserLeft(lobby, user string) {
+	delete(b.queue, user)
+	fmt.Println(user, "left", lobby)
+	if len(b.queue) == 0 {
+		fmt.Println("Closing the lobby")
+		fmt.Fprintf(b.conn, "PRIVMSG %v !mp close\n", lobby)
+	}
+}
+
+func (b *Bot) OnHostChanged(lobby, user string) {
+	fmt.Println(user, "became the host")
+}
+
+func (b *Bot) OnBeatmapChanged(lobby, artist, title, difficulty string, id int) {
+	fmt.Println("Selected", artist, "-", title)
+}
+
+func (b *Bot) OnAllPlayersReady(lobby string) {
+	fmt.Println("all players ready")
+	fmt.Fprintf(b.conn, "PRIVMSG %v !mp start", lobby)
+}
+
+func (b *Bot) OnMatchStarted(lobby string) {
+	fmt.Println("Match started")
+}
+
+func (b *Bot) OnMatchFinished(lobby string) {
+	fmt.Println("Match finished")
+}
+
+func (b *Bot) OnMatchAborted(lobby string) {
+	fmt.Println("Match aborted")
+}
+
+func (b *Bot) OnUserMessage(lobby, user, message string) {
+	fmt.Printf("%v: %v\n", user, message)
+}
+
+func (b *Bot) OnUserCommand(lobby, user, command string, args []string) {
+	fmt.Printf("%v: %v(%v)\n", user, command, strings.Join(args, ", "))
+}
+
 func main() {
-	var cfg config
-	var irc ircConn
+	var e error
+	bot := Bot{ queue: make(map[string]struct{}) }
 
 	fmt.Println("Loading", configPath)
-	b, e := os.ReadFile(configPath)
-	if e != nil {
-		panic(e)
-	}
-	if e = json.Unmarshal(b, &cfg); e != nil {
+	if e = LoadJSON(configPath, &bot.config); e != nil {
 		panic(e)
 	}
 
-	fmt.Println("Connecting to", cfg.IRC.Addr)
-	irc.Conn, e = net.Dial("tcp", cfg.IRC.Addr)
-	if e != nil {
-		panic(e)
-	}
-	irc.scanner = bufio.NewScanner(irc.Conn)
-	defer irc.Close()
+	fmt.Println("Loading", cachePath)
+	LoadJSON(cachePath, &bot.cache)
 
-	fmt.Println("Authenticating as", cfg.IRC.User)
-	fmt.Fprintf(irc, "PASS %v\nNICK %v\n", cfg.IRC.Pass, cfg.IRC.User)
-	for {
-		m, e := irc.get()
-		if e != nil {
-			panic(e)
-		}
-		if m.cmd == "001" {
-			break
-		}
-		fmt.Printf("%v: %v\n", m.src, strings.Join(m.args, " "))
-	}
+	fmt.Println("Connecting to", bot.config.IRC.Addr)
+	bot.conn, e = irc.Connect(bot.config.IRC.Addr)
 
-	for m, e := irc.get(); e == nil; m, e = irc.get() {
-		if m.cmd == "PING" {
-			fmt.Fprintf(irc, "PONG\n")
-		} else if m.cmd != "QUIT" {
-			fmt.Println(m)
-		}
+	fmt.Println("Authenticating as", bot.config.IRC.User)
+	fmt.Fprintf(bot.conn, "PASS %v\nNICK %v\n", bot.config.IRC.Pass, bot.config.IRC.User)
+
+	for m, e := bot.conn.Get(); e == nil; m, e = bot.conn.Get() {
+		irc.Dispatch(m, &bot)
 	}
 }
 
 const (
 	configPath = "config.json"
+	cachePath = "cache.json"
 )
 
 type config struct {
@@ -65,69 +155,25 @@ type config struct {
 	} `json:"irc"`
 }
 
-type ircConn struct {
-	net.Conn
-	scanner *bufio.Scanner
+type cache struct {
+	Lobby string `json:"lobby"`
 }
 
-type ircMsg struct {
-	src, cmd string
-	args []string
+func LoadJSON(path string, object any) error {
+	b, e := os.ReadFile(path)
+	if e != nil {
+		return e
+	}
+	if e = json.Unmarshal(b, object); e != nil {
+		return e
+	}
+	return nil
 }
 
-func (irc ircConn) get() (m ircMsg, e error) {
-	if !irc.scanner.Scan() {
-		e = irc.scanner.Err()
-		if e == nil {
-			e = net.ErrClosed
-		}
-		return
+func SaveJSON(path string, object any) error {
+	b, e := json.MarshalIndent(object, "", "\t")
+	if e != nil {
+		return e
 	}
-	l := irc.scanner.Text()
-	c := 0
-	if c = strings.IndexFunc(l, notSpace); c == -1 {
-		return
-	}
-	l = l[c:]
-	if strings.HasPrefix(l, ":") {
-		l = l[1:]
-		if c = strings.IndexFunc(l, unicode.IsSpace); c == -1 {
-			return
-		}
-		if b := strings.IndexRune(l[:c], '!'); b != -1 {
-			m.src = l[:b]
-		} else {
-			m.src = l[:c]
-		}
-		l = l[c:]
-		if c = strings.IndexFunc(l, notSpace); c == -1 {
-			return
-		}
-		l = l[c:]
-	}
-	if c = strings.IndexFunc(l, unicode.IsSpace); c == -1 {
-		c = len(l)
-	}
-	m.cmd = l[:c]
-	l = l[c:]
-	for {
-		if c = strings.IndexFunc(l, notSpace); c == -1 {
-			break
-		}
-		l = l[c:]
-		if strings.HasPrefix(l, ":") {
-			m.args = append(m.args, l[1:])
-			break
-		}
-		if c = strings.IndexFunc(l, unicode.IsSpace); c == -1 {
-			c = len(l)
-		}
-		m.args = append(m.args, l[:c])
-		l = l[c:]
-	}
-	return
-}
-
-func notSpace(r rune) bool {
-	return !unicode.IsSpace(r)
+	return os.WriteFile(path, b, 0666)
 }
