@@ -16,6 +16,10 @@ type Config struct {
 		ID string `json:"id"`
 		Secret string `json:"secret"`
 	} `json:"api"`
+	AHR struct {
+		Enabled bool    `json:"enabled"`
+		PrintQueue bool `json:"print_queue"`
+	} `json:"ahr"`
 }
 
 func (c *Config) LoadFile(path string) error {
