@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"fmt"
 	"context"
 	"strings"
@@ -141,7 +142,7 @@ func (b *Bot) OnUserCommand(lobby, user, command string, args []string) {
 }
 
 func main() {
-	defer RecoverMain()
+	defer HandlePanic()
 
 	var e error
 	bot := Bot{ queue: make(map[string]struct{}) }
@@ -170,11 +171,13 @@ func main() {
 const (
 	configPath = "config.json"
 	cachePath = "cache.json"
+	crashPath = "crash.txt"
 )
 
-func RecoverMain() {
+func HandlePanic() {
 	if r := recover(); r != nil {
-		fmt.Printf("panic: %v\n\n%v", r, string(debug.Stack()))
-		// fmt.Scan()
+		m := fmt.Sprintf("panic: %v\n\n%v", r, string(debug.Stack()))
+		os.WriteFile(crashPath, []byte(m), 0666)
+		fmt.Println(m)
 	}
 }
