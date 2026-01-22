@@ -27,6 +27,7 @@ type Bot struct {
 	beatmap api.Beatmap
 	matchInProgress bool
 	matchStartTime time.Time
+	mustDefineQueue bool
 }
 
 func (b *Bot) OnAuthenticated() {
@@ -51,6 +52,8 @@ func (b *Bot) OnAuthenticationError(e string) {
 }
 
 func (b *Bot) OnJoined(lobby string, players []string) {
+	fmt.Println("Joined lobby", lobby)
+
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -61,12 +64,14 @@ func (b *Bot) OnJoined(lobby string, players []string) {
 		fmt.Fprintf(b.conn, "PRIVMSG %v !mp password\n", lobby)
 		fmt.Fprintf(b.conn, "PRIVMSG %v !mp size 8\n", lobby)
 		fmt.Fprintf(b.conn, "PRIVMSG %v !mp invite %v\n", lobby, b.config.IRC.User)
+	} else if len(players) > 1 {
+		b.mustDefineQueue = true
+		b.config.HR.Enabled = false
+		fmt.Println("HR is disabled because the bot does not know what the host queue order was")
 	}
 
 	b.cache.Lobby = lobby
 	b.cache.SaveFile(cachePath)
-
-	fmt.Println("Joined", lobby)
 }
 
 func (b *Bot) OnJoinError(e string) {
@@ -78,6 +83,7 @@ func (b *Bot) OnJoinError(e string) {
 	if b.cache.Lobby != "" {
 		b.cache.Lobby = ""
 		b.cache.SaveFile(cachePath)
+		fmt.Println("Creating new lobby")
 		fmt.Fprintf(b.conn, "PRIVMSG BanchoBot !mp make %v's game\n", b.config.IRC.User)
 	} else {
 		b.conn.Close()
@@ -85,12 +91,6 @@ func (b *Bot) OnJoinError(e string) {
 }
 
 func (b *Bot) OnLeft(lobby string) {
-	fmt.Println("The bot has left the lobby, closing the connection")
-
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	b.conn.Close()
 }
 
 func (b *Bot) OnClosed(lobby string) {
@@ -103,8 +103,6 @@ func (b *Bot) OnClosed(lobby string) {
 }
 
 func (b *Bot) OnUserJoined(lobby, user string) {
-	fmt.Println(user, "joined")
-
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -113,20 +111,9 @@ func (b *Bot) OnUserJoined(lobby, user string) {
 	if len(b.queue) == 1 {
 		fmt.Fprintf(b.conn, "PRIVMSG %v !mp host %v\n", lobby, user)
 	}
-
-	go func(){
-		u, e := b.api.GetUserByName(context.Background(), user)
-		if e != nil {
-			fmt.Println(e)
-			return
-		}
-		fmt.Println(u)
-	}()
 }
 
 func (b *Bot) OnUserLeft(lobby, user string) {
-	fmt.Println(user, "left")
-
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -136,8 +123,14 @@ func (b *Bot) OnUserLeft(lobby, user string) {
 	if len(b.queue) == 0 {
 		fmt.Println("All players have left, closing the lobby")
 		fmt.Fprintf(b.conn, "PRIVMSG %v !mp close\n", lobby)
-	} else if b.config.AHR.Enabled && i == 0 {
+	} else if b.config.HR.Enabled && i == 0 {
+		fmt.Printf("The host has left, transferring host to the next player in the queue (%v)\n", b.queue[0])
 		fmt.Fprintf(b.conn, "PRIVMSG %v !mp host %v\n", lobby, b.queue[0])
+	}
+
+	if len(b.queue) == 1 && b.mustDefineQueue {
+		b.mustDefineQueue = false
+		fmt.Println("HR queue can now be enabled")
 	}
 }
 
@@ -145,7 +138,8 @@ func (b *Bot) OnHostChanged(lobby, user string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	if user != b.queue[0] && b.config.AHR.Enabled {
+	if user != b.queue[0] && b.config.HR.Enabled && !b.mustDefineQueue {
+		fmt.Println("Reverting illegal host transfer to", user)
 		fmt.Fprintf(b.conn, "PRIVMSG %v !mp host %v\n", lobby, b.queue[0])
 		fmt.Fprintf(
 			b.conn,
@@ -165,76 +159,76 @@ func (b *Bot) OnBeatmapChanged(lobby, artist, title, difficulty string, id int) 
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	if !b.config.DC.Enabled {
-		return
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 3 * time.Second)
 	defer cancel()
-
 	bm, e := b.api.GetBeatmap(ctx, id)
 	if e != nil {
-		fmt.Println("Failed to fetch beatmap info for DC check:", e)
+		fmt.Println("Failed to fetch beatmap info:", e)
 		return
 	}
 
-	if bm.Stars >= b.config.DC.Range[0] && bm.Stars <= b.config.DC.Range[1] {
-		fmt.Printf(
-			"Selected %v - %v [%v] %v*\n",
-			bm.BeatmapSet.Artist,
-			bm.BeatmapSet.Title,
-			bm.Name,
-			bm.Stars,
-		)
-	} else {
-		if b.beatmap.ID != 0 {
-			fmt.Printf(
-				"Rejecting %v - %v [%v] %v*\n",
-				bm.BeatmapSet.Artist,
-				bm.BeatmapSet.Title,
-				bm.Name,
-				bm.Stars,
-			)
-			fmt.Fprintf(b.conn, "PRIVMSG %v !mp map %v 0\n", b.lobby, b.beatmap.ID)
-			fmt.Fprintf(
-				b.conn,
-				"PRIVMSG %v %v, [https://osu.ppy.sh/beatmapsets/%v#osu/%v %v - %v [%v]] (%.2f*) " +
-				"is outside of allowed difficulty range [%v, %v]. You can ask %v to change the it.\n",
-				b.lobby,
-				b.queue[0],
-				bm.BeatmapSetID,
-				bm.ID,
-				bm.BeatmapSet.Artist,
-				bm.BeatmapSet.Title,
-				bm.Name,
-				bm.Stars,
-				b.config.DC.Range[0],
-				b.config.DC.Range[1],
-				b.config.IRC.User,
-			)
-		} else {
-			fmt.Printf(
-				"%v - %v [%v] %v* should be rejected but there's no map to fallback to\n",
-				bm.BeatmapSet.Artist,
-				bm.BeatmapSet.Title,
-				bm.Name,
-				bm.Stars,
-			)
+	if b.config.DC.Enabled {
+		if bm.Stars < b.config.DC.Range[0] || bm.Stars > b.config.DC.Range[1] {
+			if b.beatmap.ID != 0 {
+				var mapStatus string
+				if bm.Stars < b.config.DC.Range[0] {
+					mapStatus = fmt.Sprintf("too easy (%v* < %v*)", bm.Stars, b.config.DC.Range[0])
+				} else {
+					mapStatus = fmt.Sprintf("too hard (%v* > %v*)", bm.Stars, b.config.DC.Range[1])
+				}
+
+				fmt.Printf(
+					"Rejecting %v - %v [%v] %v*\n",
+					bm.BeatmapSet.Artist,
+					bm.BeatmapSet.Title,
+					bm.Name,
+					bm.Stars,
+				)
+				fmt.Fprintf(b.conn, "PRIVMSG %v !mp map %v 0\n", b.lobby, b.beatmap.ID)
+				fmt.Fprintf(
+					b.conn,
+					"PRIVMSG %v %v, [https://osu.ppy.sh/beatmapsets/%v#osu/%v %v - %v [%v]] (%.2f*) " +
+					"%v. You can ask %v to change the allowed difficulty range.\n",
+					b.lobby,
+					b.queue[0],
+					bm.BeatmapSetID,
+					bm.ID,
+					bm.BeatmapSet.Artist,
+					bm.BeatmapSet.Title,
+					bm.Name,
+					bm.Stars,
+					mapStatus,
+					b.config.IRC.User,
+				)
+			} else {
+				fmt.Printf(
+					"%v - %v [%v] %v* should be rejected but there's no map to fallback to\n",
+					bm.BeatmapSet.Artist,
+					bm.BeatmapSet.Title,
+					bm.Name,
+					bm.Stars,
+				)
+			}
+			return
 		}
-		return
 	}
 
 	b.beatmap = bm
+
+	fmt.Printf(
+		"Selected %v - %v [%v] %v*\n",
+		bm.BeatmapSet.Artist,
+		bm.BeatmapSet.Title,
+		bm.Name,
+		bm.Stars,
+	)
 }
 
 func (b *Bot) OnAllPlayersReady(lobby string) {
-	fmt.Println("All players are ready, starting the match")
 	fmt.Fprintf(b.conn, "PRIVMSG %v !mp start\n", lobby)
 }
 
 func (b *Bot) OnMatchStarted(lobby string) {
-	fmt.Println("The match has started")
-
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -243,24 +237,20 @@ func (b *Bot) OnMatchStarted(lobby string) {
 }
 
 func (b *Bot) OnMatchFinished(lobby string) {
-	fmt.Println("The match has finished")
-
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	b.matchInProgress = false
 
-	if b.config.AHR.Enabled {
+	if b.config.HR.Enabled && !b.mustDefineQueue {
 		b.rotateHost(lobby)
-		if b.config.AHR.PrintQueue {
+		if b.config.HR.PrintQueue {
 			b.printQueue(lobby)
 		}
 	}
 }
 
 func (b *Bot) OnMatchAborted(lobby string) {
-	fmt.Println("The match was aborted")
-
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -268,20 +258,38 @@ func (b *Bot) OnMatchAborted(lobby string) {
 }
 
 func (b *Bot) OnUserMessage(lobby, user, message string) {
-	fmt.Printf("%v: %v\n", user, message)
 }
 
 func (b *Bot) OnUserCommand(lobby, user, cmd string, args []string) {
-	fmt.Printf("%v %v(%v)\n", user, cmd, strings.Join(args, ", "))
+	fmt.Printf("%v executed %v(%v)\n", user, cmd, strings.Join(args, ", "))
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	if cmd == "q" || cmd == "queue" {
+		if len(args) > 0 && user == b.config.IRC.User {
+			newQueue := make([]string, 0, len(b.queue))
+			playersLeft := slices.Clone(b.queue)
+			for _, nameApprox := range args {
+				name, ok := findOneByApprox(nameApprox, playersLeft)
+				if !ok {
+					fmt.Printf("No single player matches \"%v\" approximation.\n", nameApprox)
+					continue
+				}
+				newQueue = append(newQueue, name)
+				i := slices.Index(playersLeft, name)
+				if i == -1 {
+					panic(fmt.Errorf("%v %v %v %v", args, playersLeft, name))
+				}
+				playersLeft = slices.Delete(playersLeft, i, i+1)
+			}
+			b.queue = slices.Concat(newQueue, playersLeft)
+			b.mustDefineQueue = false
+		}
 		b.printQueue(lobby)
 	} else if (cmd == "s" || cmd == "skip") && (user == b.queue[0] || user == b.config.IRC.User) {
 		b.rotateHost(lobby)
-		fmt.Println(user, "skipped host")
+		fmt.Println("Skipping", user)
 	} else if (cmd == "tl" || cmd == "timeleft") && b.matchInProgress && b.beatmap.ID != 0 {
 		tl := b.matchStartTime.Add(time.Duration(b.beatmap.Length) * time.Second).Sub(time.Now())
 		fmt.Fprintf(
@@ -291,26 +299,40 @@ func (b *Bot) OnUserCommand(lobby, user, cmd string, args []string) {
 			int(tl.Minutes()),
 			int(tl.Seconds()) % 60,
 		)
-	} else if cmd == "ahr" && user == b.config.IRC.User {
+	} else if cmd == "hr" && user == b.config.IRC.User {
 		if len(args) == 0 {
-			fmt.Fprintf(b.conn, "PRIVMSG %v AHR enabled: %v\n", lobby, b.config.AHR.Enabled)
+			if b.mustDefineQueue {
+				fmt.Fprintf(b.conn, "PRIVMSG %v Host rotation is disabled until the queue is defined\n", lobby)
+			} else {
+				fmt.Fprintf(
+					b.conn,
+					"PRIVMSG %v Host rotation is %v\n",
+					lobby,
+					boolToEnabledDisabled(b.config.HR.Enabled),
+				)
+			}
 		} else if len(args) == 1 && (args[0] == "on" || args[0] == "off") {
 			if args[0] == "on" {
-				b.config.AHR.Enabled = true
+				if b.mustDefineQueue {
+					fmt.Println("Attempted to enable HR without defining the queue")
+					fmt.Fprintf(b.conn, "PRIVMSG %v Define the queue first using !q command\n", lobby)
+					return
+				}
+				b.config.HR.Enabled = true
 			} else {
-				b.config.AHR.Enabled = false
+				b.config.HR.Enabled = false
 			}
-			fmt.Println("AHR enabled:", b.config.AHR.Enabled)
+			fmt.Println("HR", boolToEnabledDisabled(b.config.HR.Enabled))
 		} else {
-			fmt.Fprintf(b.conn, "PRIVMSG %v Syntax: !ahr [on/off]\n", lobby)
+			fmt.Fprintf(b.conn, "PRIVMSG %v Syntax: !HR [on/off]\n", lobby)
 		}
 	} else if cmd == "dc" && user == b.config.IRC.User {
 		if len(args) == 0 {
 			fmt.Fprintf(
 				b.conn,
-				"PRIVMSG %v Difficulty constraint enabled: %v\n",
+				"PRIVMSG %v Difficulty constraint is %v\n",
 				lobby,
-				b.config.DC.Enabled,
+				boolToEnabledDisabled(b.config.DC.Enabled),
 			)
 		} else if len(args) == 1 && (args[0] == "on" || args[0] == "off") {
 			if args[0] == "on" {
@@ -318,7 +340,7 @@ func (b *Bot) OnUserCommand(lobby, user, cmd string, args []string) {
 			} else {
 				b.config.DC.Enabled = false
 			}
-			fmt.Println("Difficulty constraint enabled:", b.config.DC.Enabled)
+			fmt.Println("DC", boolToEnabledDisabled(b.config.DC.Enabled))
 		} else {
 			fmt.Fprintf(b.conn, "PRIVMSG %v Syntax: !dc [on/off]\n", lobby)
 		}
@@ -326,7 +348,7 @@ func (b *Bot) OnUserCommand(lobby, user, cmd string, args []string) {
 		if len(args) == 0 {
 			fmt.Fprintf(
 				b.conn,
-				"PRIVMSG %v Difficulty range: [%v, %v]\n",
+				"PRIVMSG %v Difficulty range is %v-%v*\n",
 				lobby,
 				b.config.DC.Range[0],
 				b.config.DC.Range[1],
@@ -336,38 +358,25 @@ func (b *Bot) OnUserCommand(lobby, user, cmd string, args []string) {
 			rmax, e2 := strconv.ParseFloat(args[1], 32)
 			if e1 == nil && e2 == nil {
 				b.config.DC.Range[0], b.config.DC.Range[1] = float32(rmin), float32(rmax)
-				fmt.Println("Difficulty range:", b.config.DC.Range[0], b.config.DC.Range[1])
+				fmt.Printf("Set DCR to %v-%v\n", b.config.DC.Range[0], b.config.DC.Range[1])
 			} else {
 				fmt.Fprintf(b.conn, "PRIVMSG %v Syntax: !dcr [min max]\n", lobby)
 			}
 		} else {
 			fmt.Fprintf(b.conn, "PRIVMSG %v Syntax: !dcr [min max]\n", lobby)
 		}
-	} else if cmd == "help" || cmd == "info" {
+	} else if cmd == "m" || cmd == "mirrors" {
+		if b.beatmap.ID == 0 {
+			fmt.Println("The bot couldn't get the beatmap info up to this point")
+			return
+		}
 		fmt.Fprintf(
 			b.conn,
-			"PRIVMSG %[1]v ┌ Info:\n" +
-			"PRIVMSG %[1]v │    AHR enabled: %[2]v\n" +
-			"PRIVMSG %[1]v │    Queue: %[3]v\n" +
-			"PRIVMSG %[1]v │    Difficulty constraint enabled: %[4]v\n" +
-			"PRIVMSG %[1]v │    Difficulty range: %[5]v-%[6]v\n" +
-			"PRIVMSG %[1]v │    [https://osu.ppy.sh/mp/%[7]v Match History]\n" +
-			"PRIVMSG %[1]v │    [%[8]v Bot's Source Code]\n" +
-			"PRIVMSG %[1]v ┌ Commands:\n" +
-			"PRIVMSG %[1]v │    !q/queue – print host queue\n" +
-			"PRIVMSG %[1]v │    !s/skip – skip host\n" +
-			"PRIVMSG %[1]v │    !tl/timeleft – print estimated time until the end of the song\n" +
-			"PRIVMSG %[1]v │    !ahr [on/off] – show/enable/disable host rotation\n" +
-			"PRIVMSG %[1]v │    !dc [on/off] – show/enable/disable difficulty constraint\n" +
-			"PRIVMSG %[1]v │    !dcr [min max] – show/define difficulty range\n",
+			"PRIVMSG %[1]v [https://beatconnect.io/b/%[2]v BeatConnect] | " +
+			"[https://nerinyan.moe/d/%[2]v NeriNyan] | " +
+			"[https://catboy.best/d/%[2]v CatBoy]\n",
 			lobby,
-			b.config.AHR.Enabled,
-			formatQueue(b.queue),
-			b.config.DC.Enabled,
-			b.config.DC.Range[0],
-			b.config.DC.Range[1],
-			lobby[4:],
-			sourceRepository,
+			b.beatmap.BeatmapSetID,
 		)
 	}
 }
@@ -383,12 +392,33 @@ func (b *Bot) printQueue(lobby string) {
 
 func (b *Bot) rotateHost(lobby string) {
 	b.queue = slices.Concat(b.queue[1:], b.queue[:1])
-	fmt.Printf("Rotated host queue: %v\n", formatQueue(b.queue))
+	fmt.Printf("Rotated host queue: %v.\n", formatQueue(b.queue))
 	fmt.Fprintf(b.conn, "PRIVMSG %v !mp host %v\n", lobby, b.queue[0])
+}
+
+func findOneByApprox(str string, strs []string) (string, bool) {
+	str = strings.ToLower(str)
+	out := ""
+	for _, s := range strs {
+		if strings.HasPrefix(strings.ToLower(s), str) {
+			if out != "" {
+				return "", false
+			}
+			out = s
+		}
+	}
+	return out, out != ""
 }
 
 func formatQueue(queue []string) string {
 	return strings.Join(slices.Concat(queue[1:], queue[:1]), ", ")
+}
+
+func boolToEnabledDisabled(flag bool) string {
+	if flag {
+		return "enabled"
+	}
+	return "disabled"
 }
 
 func main() {
@@ -415,12 +445,17 @@ func main() {
 	b.cache.LoadFile(cachePath)
 
 	fmt.Println("Connecting to", b.config.IRC.Addr)
-	b.conn, e = irc.Connect(b.config.IRC.Addr)
+	b.conn, e = irc.Connect(b.config.IRC.Addr, b.config.IRC.RateLimit)
 
 	fmt.Println("Authenticating as", b.config.IRC.User)
 	fmt.Fprintf(b.conn, "PASS %v\nNICK %v\n", b.config.IRC.Pass, b.config.IRC.User)
 
 	for m, e := b.conn.Get(); e == nil; m, e = b.conn.Get() {
+		if m.Cmd == "PING" {
+			fmt.Fprintln(b.conn, "PONG")
+			continue
+		}
+
 		irc.Dispatch(m, &b)
 	}
 }

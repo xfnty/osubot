@@ -1,7 +1,9 @@
 package irc
 
 import (
+	"fmt"
 	"net"
+	"time"
 	"bufio"
 	"strings"
 	"unicode"
@@ -10,6 +12,8 @@ import (
 type Conn struct {
 	net.Conn
 	scanner *bufio.Scanner
+	sendDelay time.Duration
+	sendQueue chan []byte
 }
 
 type Msg struct {
@@ -17,12 +21,33 @@ type Msg struct {
 	Args []string
 }
 
-func Connect(addr string) (c Conn, e error) {
+func Connect(addr string, rateLimit float32) (c Conn, e error) {
 	c.Conn, e = net.Dial("tcp", addr)
-	if e == nil {
-		c.scanner = bufio.NewScanner(c.Conn)
+	if e != nil {
+		return
 	}
+	c.scanner = bufio.NewScanner(c.Conn)
+	c.sendDelay = time.Duration((1 / rateLimit) * float32(time.Second))
+	c.sendQueue = make(chan []byte)
+
+	go func(){
+		for b := range c.sendQueue {
+			c.Conn.Write(b)
+			time.Sleep(c.sendDelay)
+		}
+	}()
+
 	return
+}
+
+func (c Conn) Write(b []byte) (int, error) {
+	c.sendQueue <- b
+	return len(b), nil
+}
+
+func (c Conn) Close() error {
+	close(c.sendQueue)
+	return c.Conn.Close()
 }
 
 func (conn Conn) Get() (m Msg, e error) {

@@ -7,19 +7,20 @@ import (
 
 type Config struct {
 	IRC struct {
-		Addr string `json:"address"`
-		User string `json:"username"`
-		Pass string `json:"password"`
+		Addr string       `json:"address"`
+		User string       `json:"username"`
+		Pass string       `json:"password"`
+		RateLimit float32 `json:"rate_limit"`
 	} `json:"irc"`
 	API struct {
-		Addr string `json:"address"`
-		ID string `json:"id"`
+		Addr string   `json:"address"`
+		ID string     `json:"id"`
 		Secret string `json:"secret"`
 	} `json:"api"`
-	AHR struct {
+	HR struct {
 		Enabled bool    `json:"enabled"`
 		PrintQueue bool `json:"print_queue"`
-	} `json:"ahr"`
+	} `json:"host_rotation"`
 	DC struct {
 		Enabled bool `json:"enabled"`
 		Range [2]float32 `json:"range"`
