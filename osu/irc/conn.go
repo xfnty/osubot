@@ -1,7 +1,6 @@
 package irc
 
 import (
-	"fmt"
 	"net"
 	"time"
 	"bufio"
