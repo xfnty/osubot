@@ -32,6 +32,11 @@ func (c *Client) GetBeatmap(ctx context.Context, id int) (b Beatmap, e error) {
 	return
 }
 
+func (c *Client) GetUserScore(ctx context.Context, userID int, beatmapID int) (s BeatmapUserScore, e error) {
+	e = c.do(ctx, &s, "GET", fmt.Sprintf("/api/v2/beatmaps/%v/scores/users/%v", beatmapID, userID))
+	return
+}
+
 func (c *Client) Token() Token {
 	c.mu.Lock()
 	defer c.mu.Unlock()

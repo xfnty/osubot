@@ -38,4 +38,21 @@ type Beatmap struct {
 	Stars float32          `json:"difficulty_rating"`
 	BeatmapSetID int       `json:"beatmapset_id"`
 	BeatmapSet *BeatmapSet `json:"beatmapset"`
+	MaxCombo *int          `json:"max_combo"`
+}
+
+type Score struct {
+	Accuracy float32 `json:"accuracy"`
+	BeatmapID int    `json:"beatmap_id"`
+	IsPFC bool       `json:"legacy_perfect"`
+	Combo int        `json:"max_combo"`
+	Mods []string    `json:"mods"`
+	PP *float32      `json:"pp"`
+	Rank string      `json:"rank"`
+	Score int        `json:"legacy_total_score"`
+}
+
+type BeatmapUserScore struct {
+	Position int `json:"position"`
+	Score Score `json:"score"`
 }

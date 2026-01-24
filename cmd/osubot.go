@@ -406,6 +406,59 @@ func (b *Bot) OnUserCommand(lobby, user, cmd string, args []string) {
 				b.beatmap.BeatmapSetID,
 			),
 		)
+	} else if cmd == "pb" {
+		if b.beatmap.ID == 0 {
+			return
+		}
+		go func(bm api.Beatmap, bms api.BeatmapSet){
+			ctx, cancel := context.WithTimeout(context.Background(), 5 * time.Second)
+			defer cancel()
+
+			u, e := b.api.GetUserByName(ctx, user)
+			if e != nil {
+				fmt.Printf("Failed to get %v's user info: %v\n", user, e)
+				return
+			}
+
+			bs, e := b.api.GetUserScore(ctx, u.ID, bm.ID)
+			if e != nil {
+				fmt.Printf(
+					"Failed to get %v's score on %v - %v [%v]: %v\n",
+					user,
+					bms.Artist,
+					bms.Title,
+					bm.Name,
+					e,
+				)
+				b.conn.Send("PRIVMSG", lobby, fmt.Sprintf("Couldn't get %v's best score on this map.", user))
+			} else {
+				msg := strings.Builder{}
+
+				msg.WriteString(fmt.Sprintf("%v's best score: #%v ", user, bs.Position))
+
+				if len(bs.Score.Mods) > 0 {
+					for _, mode := range bs.Score.Mods {
+						msg.WriteString(mode)
+					}
+				}
+
+				msg.WriteString(fmt.Sprintf(" %.1f%%", bs.Score.Accuracy * 100))
+
+				if bm.MaxCombo != nil && bs.Score.Combo != *bm.MaxCombo {
+					msg.WriteString(fmt.Sprintf(" x%v/%v", bs.Score.Combo, *bm.MaxCombo))
+				} else {
+					msg.WriteString(fmt.Sprintf(" x%v", bs.Score.Combo))
+				}
+
+				if bs.Score.PP != nil {
+					msg.WriteString(fmt.Sprintf(" %vpp", int(*bs.Score.PP)))
+				}
+
+				msg.WriteString(fmt.Sprintf(" %v rank", bs.Score.Rank))
+
+				b.conn.Send("PRIVMSG", lobby, msg.String())
+			}
+		}(b.beatmap, *b.beatmap.BeatmapSet)
 	}
 }
 
