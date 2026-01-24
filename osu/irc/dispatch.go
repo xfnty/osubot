@@ -32,6 +32,8 @@ func Dispatch(m Msg, d Dispatcher) {
 		d.OnAuthenticated()
 	} else if m.Cmd == "464" {
 		d.OnAuthenticationError(m.Args[1])
+	} else if m.Cmd == "372" && strings.HasPrefix(m.Args[1], "- You are required to authenticate") {
+		d.OnAuthenticationError("Invalid IRC credentials")
 	} else if m.Cmd == "403" {
 		d.OnJoinError(m.Args[2])
 	} else if m.Cmd == "353" {

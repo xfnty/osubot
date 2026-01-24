@@ -9,6 +9,7 @@ import (
 	"context"
 	"strings"
 	"strconv"
+	"os/signal"
 	"runtime/debug"
 
 	"osubot"
@@ -44,11 +45,7 @@ func (b *Bot) OnAuthenticated() {
 }
 
 func (b *Bot) OnAuthenticationError(e string) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	fmt.Println(e)
-	b.conn.Close()
+	panic(e)
 }
 
 func (b *Bot) OnJoined(lobby string, players []string) {
@@ -123,12 +120,12 @@ func (b *Bot) OnUserLeft(lobby, user string) {
 	if len(b.queue) == 0 {
 		fmt.Println("All players have left, closing the lobby")
 		fmt.Fprintf(b.conn, "PRIVMSG %v !mp close\n", lobby)
-	} else if b.config.HR.Enabled && i == 0 {
+	} else if b.config.HR.Enabled {
 		fmt.Printf("The host has left, transferring host to the next player in the queue (%v)\n", b.queue[0])
 		fmt.Fprintf(b.conn, "PRIVMSG %v !mp host %v\n", lobby, b.queue[0])
 	}
 
-	if len(b.queue) == 1 && b.mustDefineQueue {
+	if len(b.queue) <= 1 && b.mustDefineQueue {
 		b.mustDefineQueue = false
 		fmt.Println("HR queue can now be enabled")
 	}
@@ -430,13 +427,32 @@ func main() {
 			m := fmt.Sprintf("panic: %v\n\n%v", r, string(debug.Stack()))
 			os.WriteFile(crashPath, []byte(m), 0666)
 			fmt.Println(m)
+
+			defer recover()
 			fmt.Fprintf(b.conn, "PRIVMSG %v The bot has crashed: %v\n", b.config.IRC.User, r)
 		}
 	}()
 
 	fmt.Println("Loading", configPath)
 	if e = b.config.LoadFile(configPath); e != nil {
-		panic(e)
+		if os.IsNotExist(e) {
+			fmt.Print("IRC username: ")
+			fmt.Scanln(&b.config.IRC.User)
+			fmt.Print("IRC password: ")
+			fmt.Scanln(&b.config.IRC.Pass)
+			fmt.Print("OAuth Client ID: ")
+			fmt.Scanln(&b.config.API.ID)
+			fmt.Print("OAuth Client Secret: ")
+			fmt.Scanln(&b.config.API.Secret)
+			b.config.IRC.Addr = "irc.ppy.sh:6667"
+			b.config.IRC.RateLimit = 4
+			b.config.API.Addr = "https://osu.ppy.sh"
+			b.config.HR.Enabled = true
+			b.config.HR.PrintQueue = true
+			b.config.SaveFile(configPath)
+		} else {
+			panic(e)
+		}
 	}
 
 	b.api = api.NewClient(b.config.API.Addr, b.config.API.ID, b.config.API.Secret)
@@ -450,13 +466,37 @@ func main() {
 	fmt.Println("Authenticating as", b.config.IRC.User)
 	fmt.Fprintf(b.conn, "PASS %v\nNICK %v\n", b.config.IRC.Pass, b.config.IRC.User)
 
-	for m, e := b.conn.Get(); e == nil; m, e = b.conn.Get() {
-		if m.Cmd == "PING" {
-			fmt.Fprintln(b.conn, "PONG")
-			continue
+	errCh := make(chan error)
+	go func(){
+		var e error
+		var m irc.Msg
+		for m, e = b.conn.Get(); e == nil; m, e = b.conn.Get() {
+			if m.Cmd == "PING" {
+				fmt.Fprintln(b.conn, "PONG")
+				continue
+			}
+			irc.Dispatch(m, &b)
 		}
+		errCh <- e
+		close(errCh)
+	}()
 
-		irc.Dispatch(m, &b)
+	sigCh := make(chan os.Signal)
+	signal.Notify(sigCh, os.Interrupt)
+
+	select {
+	case <-errCh:
+		break
+	case <-sigCh:
+		var inp string
+		fmt.Print("Close the lobby? [Y/n]: ")
+		fmt.Scanln(&inp)
+		if inp != "n" {
+			fmt.Fprintf(b.conn, "PRIVMSG %v !mp close\n", b.lobby)
+			<-errCh
+		} else {
+			b.conn.Close()
+		}
 	}
 }
 
