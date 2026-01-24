@@ -365,6 +365,17 @@ func (b *Bot) OnUserCommand(lobby, user, cmd string, args []string) {
 		} else {
 			b.conn.Send("PRIVMSG", lobby, "Syntax: !dcr [min max]")
 		}
+	} else if cmd == "pq" && user == b.config.IRC.User {
+		if len(args) == 1 && (args[0] == "on" || args[0] == "off") {
+			if args[0] == "on" {
+				b.config.HR.PrintQueue = true
+			} else {
+				b.config.HR.PrintQueue = false
+			}
+			fmt.Println("PQ", boolToEnabledDisabled(b.config.HR.PrintQueue))
+		} else {
+			b.conn.Send("PRIVMSG", lobby, "Syntax: !pq on/off")
+		}
 	} else if cmd == "m" || cmd == "mirrors" {
 		if b.beatmap.ID == 0 {
 			fmt.Println("The bot couldn't get the beatmap info up to this point")
