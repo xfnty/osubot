@@ -366,7 +366,13 @@ func (b *Bot) OnUserCommand(lobby, user, cmd string, args []string) {
 			b.conn.Send("PRIVMSG", lobby, "Syntax: !dcr [min max]")
 		}
 	} else if cmd == "pq" && user == b.config.IRC.User {
-		if len(args) == 1 && (args[0] == "on" || args[0] == "off") {
+		if len(args) == 0 {
+			b.conn.Send(
+				"PRIVMSG",
+				lobby,
+				fmt.Sprintf("Print queue %v", boolToEnabledDisabled(b.config.HR.PrintQueue)),
+			)
+		} else if len(args) == 1 && (args[0] == "on" || args[0] == "off") {
 			if args[0] == "on" {
 				b.config.HR.PrintQueue = true
 			} else {

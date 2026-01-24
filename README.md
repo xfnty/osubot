@@ -11,7 +11,7 @@ have to define the queue by hand using `!q names...`. Otherwise host rotation wi
 The bot supports most of the commands players would expect it to and a few others related to its settings.
 
 | Command            | Description                                                      | Access      |
-| :----------------- | :-----------------------------------------------------------     | :---------- |
+| :----------------- | :--------------------------------------------------------------- | :---------- |
 | `!q [names...]`    | Prints the host queue or defines it if executed by the owner.    | Anyone      |
 | `!tl`, `!timeleft` | Prints estimated time left until the end of the match.           | Anyone      |
 | `!m`, `!mirrors`   | Prints links to download mirrors for the current beatmap.        | Anyone      |
@@ -19,7 +19,7 @@ The bot supports most of the commands players would expect it to and a few other
 | `!hr [on/off]`     | Enabled/disables host rotation or prints its status.             | Owner       |
 | `!dc [on/off]`     | Enabled/disables difficulty constraint or prints its status.     | Owner       |
 | `!dcr min max`     | Defines difficulty constraint range or prints it out.            | Owner       |
-| `!pq on/off`       | Enable/disable printing queue after each song.                   | Owner       |
+| `!pq [on/off]`     | Enable/disable printing queue after each song or show its status | Owner       |
 
 The `names` in `!q` command are approximations if players' nicknames written as one or many of their first
 letters in lowercase. If username contains whitespace, use double quotes: `"a player"`. Players not in the
