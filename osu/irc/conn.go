@@ -1,6 +1,7 @@
 package irc
 
 import (
+	"fmt"
 	"net"
 	"time"
 	"bufio"
@@ -9,10 +10,9 @@ import (
 )
 
 type Conn struct {
-	net.Conn
+	conn net.Conn
 	scanner *bufio.Scanner
-	sendDelay time.Duration
-	sendQueue chan []byte
+	limiter *time.Ticker
 }
 
 type Msg struct {
@@ -21,35 +21,31 @@ type Msg struct {
 }
 
 func Connect(addr string, rateLimit float32) (c Conn, e error) {
-	c.Conn, e = net.Dial("tcp", addr)
+	c.conn, e = net.Dial("tcp", addr)
 	if e != nil {
 		return
 	}
-	c.scanner = bufio.NewScanner(c.Conn)
-	c.sendDelay = time.Duration((1 / rateLimit) * float32(time.Second))
-	c.sendQueue = make(chan []byte)
-
-	go func(){
-		for b := range c.sendQueue {
-			c.Conn.Write(b)
-			time.Sleep(c.sendDelay)
-		}
-	}()
-
+	c.scanner = bufio.NewScanner(c.conn)
+	c.limiter = time.NewTicker(time.Duration((1 / rateLimit) * float32(time.Second)))
 	return
 }
 
-func (c Conn) Write(b []byte) (int, error) {
-	c.sendQueue <- b
-	return len(b), nil
-}
-
 func (c Conn) Close() error {
-	close(c.sendQueue)
-	return c.Conn.Close()
+	return c.conn.Close()
 }
 
-func (conn Conn) Get() (m Msg, e error) {
+func (c Conn) Send(cmd string, args ...any) {
+	<-c.limiter.C
+
+	sArgs := make([]string, len(args), len(args))
+	for i, a := range args {
+		sArgs[i] = fmt.Sprintf("%v", a)
+	}
+
+	c.conn.Write([]byte(fmt.Sprintf("%v %v\n", cmd, strings.Join(sArgs, " "))))
+}
+
+func (conn Conn) Recv() (m Msg, e error) {
 	if !conn.scanner.Scan() {
 		e = conn.scanner.Err()
 		if e == nil {

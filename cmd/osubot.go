@@ -37,10 +37,10 @@ func (b *Bot) OnAuthenticated() {
 
 	if b.cache.Lobby != "" {
 		fmt.Println("Attempting to rejoin", b.cache.Lobby)
-		fmt.Fprintf(b.conn, "JOIN %v\n", b.cache.Lobby)
+		b.conn.Send("JOIN", b.cache.Lobby)
 	} else {
 		fmt.Println("Creating new lobby")
-		fmt.Fprintf(b.conn, "PRIVMSG BanchoBot !mp make %v's game\n", b.config.IRC.User)
+		b.conn.Send("PRIVMSG", "BanchoBot", "!mp", "make", b.config.IRC.User + "'s game")
 	}
 }
 
@@ -58,15 +58,10 @@ func (b *Bot) OnJoined(lobby string, players []string) {
 	b.queue = players
 
 	if b.cache.Lobby != lobby {
-		fmt.Fprintf(
-			b.conn,
-			"PRIVMSG %[1]v !mp password\n" +
-			"PRIVMSG %[1]v !mp mods Freemod\n" +
-			"PRIVMSG %[1]v !mp size 8\n" +
-			"PRIVMSG %[1]v !mp invite %[2]v\n",
-			lobby,
-			b.config.IRC.User,
-		)
+		b.conn.Send("PRIVMSG", lobby, "!mp", "password")
+		b.conn.Send("PRIVMSG", lobby, "!mp", "mods", "Freemod")
+		b.conn.Send("PRIVMSG", lobby, "!mp", "size", "8")
+		b.conn.Send("PRIVMSG", lobby, "!mp", "invite", b.config.IRC.User)
 	} else if len(players) > 1 {
 		b.mustDefineQueue = true
 		b.config.HR.Enabled = false
@@ -87,7 +82,7 @@ func (b *Bot) OnJoinError(e string) {
 		b.cache.Lobby = ""
 		b.cache.SaveFile(cachePath)
 		fmt.Println("Creating new lobby")
-		fmt.Fprintf(b.conn, "PRIVMSG BanchoBot !mp make %v's game\n", b.config.IRC.User)
+		b.conn.Send("PRIVMSG", "BanchoBot", "!mp", "make", b.config.IRC.User + "'s game")
 	} else {
 		b.conn.Close()
 	}
@@ -112,7 +107,7 @@ func (b *Bot) OnUserJoined(lobby, user string) {
 	b.queue = append(b.queue, user)
 
 	if len(b.queue) == 1 {
-		fmt.Fprintf(b.conn, "PRIVMSG %v !mp host %v\n", lobby, user)
+		b.conn.Send("PRIVMSG", lobby, "!mp", "host", user)
 	}
 }
 
@@ -125,10 +120,10 @@ func (b *Bot) OnUserLeft(lobby, user string) {
 
 	if len(b.queue) == 0 {
 		fmt.Println("All players have left, closing the lobby")
-		fmt.Fprintf(b.conn, "PRIVMSG %v !mp close\n", lobby)
+		b.conn.Send("PRIVMSG", lobby, "!mp", "close")
 	} else if b.config.HR.Enabled {
 		fmt.Printf("The host has left, transferring host to the next player in the queue (%v)\n", b.queue[0])
-		fmt.Fprintf(b.conn, "PRIVMSG %v !mp host %v\n", lobby, b.queue[0])
+		b.conn.Send("PRIVMSG", lobby, "!mp", "host", b.queue[0])
 	}
 
 	if len(b.queue) <= 1 && b.mustDefineQueue {
@@ -143,14 +138,16 @@ func (b *Bot) OnHostChanged(lobby, user string) {
 
 	if user != b.queue[0] && b.config.HR.Enabled && !b.mustDefineQueue {
 		fmt.Println("Reverting illegal host transfer to", user)
-		fmt.Fprintf(b.conn, "PRIVMSG %v !mp host %v\n", lobby, b.queue[0])
-		fmt.Fprintf(
-			b.conn,
-			"PRIVMSG %v %v, you can't transfer host to another player because host rotation is enabled. " +
-			"You can ask %v to disable it.\n",
+		b.conn.Send("PRIVMSG", lobby, "!mp", "host", b.queue[0])
+		b.conn.Send(
+			"PRIVMSG",
 			lobby,
-			b.queue[0],
-			b.config.IRC.User,
+			fmt.Sprintf(
+				"%v, you can't transfer host to another player because host rotation is enabled. " +
+				"You can ask %v to disable it.",
+				b.queue[0],
+				b.config.IRC.User,
+			),
 		)
 		return
 	}
@@ -173,39 +170,41 @@ func (b *Bot) OnBeatmapChanged(lobby, artist, title, difficulty string, id int) 
 	if b.config.DC.Enabled {
 		if bm.Stars < b.config.DC.Range[0] || bm.Stars > b.config.DC.Range[1] {
 			if b.beatmap.ID != 0 {
-				var mapStatus string
-				if bm.Stars < b.config.DC.Range[0] {
-					mapStatus = fmt.Sprintf("too easy (%v* < %v*)", bm.Stars, b.config.DC.Range[0])
-				} else {
-					mapStatus = fmt.Sprintf("too hard (%v* > %v*)", bm.Stars, b.config.DC.Range[1])
-				}
-
 				fmt.Printf(
-					"Rejecting %v - %v [%v] %v*\n",
+					"Rejecting %v - %v [%v] %.2f*\n",
 					bm.BeatmapSet.Artist,
 					bm.BeatmapSet.Title,
 					bm.Name,
 					bm.Stars,
 				)
-				fmt.Fprintf(b.conn, "PRIVMSG %v !mp map %v 0\n", b.lobby, b.beatmap.ID)
-				fmt.Fprintf(
-					b.conn,
-					"PRIVMSG %v %v, [https://osu.ppy.sh/beatmapsets/%v#osu/%v %v - %v [%v]] (%.2f*) " +
-					"%v. You can ask %v to change the allowed difficulty range.\n",
-					b.lobby,
-					b.queue[0],
-					bm.BeatmapSetID,
-					bm.ID,
-					bm.BeatmapSet.Artist,
-					bm.BeatmapSet.Title,
-					bm.Name,
-					bm.Stars,
-					mapStatus,
-					b.config.IRC.User,
+
+				b.conn.Send("PRIVMSG", lobby, "!mp", "map", b.beatmap.ID, "0")
+
+				var mapStatus string
+				if bm.Stars < b.config.DC.Range[0] {
+					mapStatus = fmt.Sprintf("too easy (%.2f<%v*)", bm.Stars, b.config.DC.Range[0])
+				} else {
+					mapStatus = fmt.Sprintf("too hard (%.2f>%v*)", bm.Stars, b.config.DC.Range[1])
+				}
+				b.conn.Send(
+					"PRIVMSG",
+					lobby,
+					fmt.Sprintf(
+						"%v, [https://osu.ppy.sh/beatmapsets/%v#osu/%v %v - %v [%v]] is %v. " +
+						"You can ask %v to change the allowed difficulty range.",
+						b.queue[0],
+						bm.BeatmapSetID,
+						bm.ID,
+						bm.BeatmapSet.Artist,
+						bm.BeatmapSet.Title,
+						bm.Name,
+						mapStatus,
+						b.config.IRC.User,
+					),
 				)
 			} else {
 				fmt.Printf(
-					"%v - %v [%v] %v* should be rejected but there's no map to fallback to\n",
+					"%v - %v [%v] %.2f* should be rejected but there's no map to fallback to\n",
 					bm.BeatmapSet.Artist,
 					bm.BeatmapSet.Title,
 					bm.Name,
@@ -219,7 +218,7 @@ func (b *Bot) OnBeatmapChanged(lobby, artist, title, difficulty string, id int) 
 	b.beatmap = bm
 
 	fmt.Printf(
-		"Selected %v - %v [%v] %v*\n",
+		"Selected %v - %v [%v] %.2f*\n",
 		bm.BeatmapSet.Artist,
 		bm.BeatmapSet.Title,
 		bm.Name,
@@ -228,7 +227,7 @@ func (b *Bot) OnBeatmapChanged(lobby, artist, title, difficulty string, id int) 
 }
 
 func (b *Bot) OnAllPlayersReady(lobby string) {
-	fmt.Fprintf(b.conn, "PRIVMSG %v !mp start\n", lobby)
+	b.conn.Send("PRIVMSG", lobby, "!mp", "start")
 }
 
 func (b *Bot) OnMatchStarted(lobby string) {
@@ -291,34 +290,31 @@ func (b *Bot) OnUserCommand(lobby, user, cmd string, args []string) {
 		}
 		b.printQueue(lobby)
 	} else if (cmd == "s" || cmd == "skip") && (user == b.queue[0] || user == b.config.IRC.User) {
-		b.rotateHost(lobby)
 		fmt.Println("Skipping", user)
+		b.rotateHost(lobby)
 	} else if (cmd == "tl" || cmd == "timeleft") && b.matchInProgress && b.beatmap.ID != 0 {
 		tl := b.matchStartTime.Add(time.Duration(b.beatmap.Length) * time.Second).Sub(time.Now())
-		fmt.Fprintf(
-			b.conn,
-			"PRIVMSG %v Time left: %vm %vs\n",
+		b.conn.Send(
+			"PRIVMSG",
 			lobby,
-			int(tl.Minutes()),
-			int(tl.Seconds()) % 60,
+			fmt.Sprintf("Time left: %vm %vs", int(tl.Minutes()), int(tl.Seconds()) % 60),
 		)
 	} else if cmd == "hr" && user == b.config.IRC.User {
 		if len(args) == 0 {
 			if b.mustDefineQueue {
-				fmt.Fprintf(b.conn, "PRIVMSG %v Host rotation is disabled until the queue is defined\n", lobby)
+				b.conn.Send("PRIVMSG", lobby, "Host rotation is disabled until the queue is defined")
 			} else {
-				fmt.Fprintf(
-					b.conn,
-					"PRIVMSG %v Host rotation is %v\n",
+				b.conn.Send(
+					"PRIVMSG",
 					lobby,
-					boolToEnabledDisabled(b.config.HR.Enabled),
+					"Host rotation is " + boolToEnabledDisabled(b.config.HR.Enabled),
 				)
 			}
 		} else if len(args) == 1 && (args[0] == "on" || args[0] == "off") {
 			if args[0] == "on" {
 				if b.mustDefineQueue {
 					fmt.Println("Attempted to enable HR without defining the queue")
-					fmt.Fprintf(b.conn, "PRIVMSG %v Define the queue first using !q command\n", lobby)
+					b.conn.Send("PRIVMSG", lobby, "Define the queue first using !q command")
 					return
 				}
 				b.config.HR.Enabled = true
@@ -327,15 +323,14 @@ func (b *Bot) OnUserCommand(lobby, user, cmd string, args []string) {
 			}
 			fmt.Println("HR", boolToEnabledDisabled(b.config.HR.Enabled))
 		} else {
-			fmt.Fprintf(b.conn, "PRIVMSG %v Syntax: !HR [on/off]\n", lobby)
+			b.conn.Send("PRIVMSG", lobby, "Syntax: !HR [on/off]")
 		}
 	} else if cmd == "dc" && user == b.config.IRC.User {
 		if len(args) == 0 {
-			fmt.Fprintf(
-				b.conn,
-				"PRIVMSG %v Difficulty constraint is %v\n",
+			b.conn.Send(
+				"PRIVMSG",
 				lobby,
-				boolToEnabledDisabled(b.config.DC.Enabled),
+				"Difficulty constraint is " + boolToEnabledDisabled(b.config.DC.Enabled),
 			)
 		} else if len(args) == 1 && (args[0] == "on" || args[0] == "off") {
 			if args[0] == "on" {
@@ -345,16 +340,14 @@ func (b *Bot) OnUserCommand(lobby, user, cmd string, args []string) {
 			}
 			fmt.Println("DC", boolToEnabledDisabled(b.config.DC.Enabled))
 		} else {
-			fmt.Fprintf(b.conn, "PRIVMSG %v Syntax: !dc [on/off]\n", lobby)
+			b.conn.Send("PRIVMSG", lobby, "Syntax: !dc [on/off]")
 		}
 	} else if cmd == "dcr" && user == b.config.IRC.User {
 		if len(args) == 0 {
-			fmt.Fprintf(
-				b.conn,
-				"PRIVMSG %v Difficulty range is %v-%v*\n",
+			b.conn.Send(
+				"PRIVMSG",
 				lobby,
-				b.config.DC.Range[0],
-				b.config.DC.Range[1],
+				fmt.Sprintf("Difficulty range is %v-%v*", b.config.DC.Range[0], b.config.DC.Range[1]),
 			)
 		} else if len(args) == 2 {
 			rmin, e1 := strconv.ParseFloat(args[0], 32)
@@ -363,40 +356,37 @@ func (b *Bot) OnUserCommand(lobby, user, cmd string, args []string) {
 				b.config.DC.Range[0], b.config.DC.Range[1] = float32(rmin), float32(rmax)
 				fmt.Printf("Set DCR to %v-%v\n", b.config.DC.Range[0], b.config.DC.Range[1])
 			} else {
-				fmt.Fprintf(b.conn, "PRIVMSG %v Syntax: !dcr [min max]\n", lobby)
+				b.conn.Send("PRIVMSG", lobby, "Syntax: !dcr [min max]")
 			}
 		} else {
-			fmt.Fprintf(b.conn, "PRIVMSG %v Syntax: !dcr [min max]\n", lobby)
+			b.conn.Send("PRIVMSG", lobby, "Syntax: !dcr [min max]")
 		}
 	} else if cmd == "m" || cmd == "mirrors" {
 		if b.beatmap.ID == 0 {
 			fmt.Println("The bot couldn't get the beatmap info up to this point")
 			return
 		}
-		fmt.Fprintf(
-			b.conn,
-			"PRIVMSG %[1]v [https://beatconnect.io/b/%[2]v BeatConnect] | " +
-			"[https://nerinyan.moe/d/%[2]v NeriNyan] | " +
-			"[https://catboy.best/d/%[2]v CatBoy]\n",
+		b.conn.Send(
+			"PRIVMSG",
 			lobby,
-			b.beatmap.BeatmapSetID,
+			fmt.Sprintf(
+				"[https://beatconnect.io/b/%[1]v BeatConnect] | " +
+				"[https://nerinyan.moe/d/%[1]v NeriNyan] | " +
+				"[https://catboy.best/d/%[1]v CatBoy]",
+				b.beatmap.BeatmapSetID,
+			),
 		)
 	}
 }
 
 func (b *Bot) printQueue(lobby string) {
-	fmt.Fprintf(
-		b.conn,
-		"PRIVMSG %v Queue: %v\n",
-		lobby,
-		formatQueue(b.queue),
-	)
+	b.conn.Send("PRIVMSG", lobby, "Queue:", formatQueue(b.queue))
 }
 
 func (b *Bot) rotateHost(lobby string) {
 	b.queue = slices.Concat(b.queue[1:], b.queue[:1])
 	fmt.Printf("Rotated host queue: %v.\n", formatQueue(b.queue))
-	fmt.Fprintf(b.conn, "PRIVMSG %v !mp host %v\n", lobby, b.queue[0])
+	b.conn.Send("PRIVMSG", lobby, "!mp", "host", b.queue[0])
 }
 
 func findOneByApprox(str string, strs []string) (string, bool) {
@@ -426,18 +416,9 @@ func boolToEnabledDisabled(flag bool) string {
 
 func main() {
 	var e error
-	b := Bot{}
+	b := &Bot{}
 
-	defer func(){
-		if r := recover(); r != nil {
-			m := fmt.Sprintf("panic: %v\n\n%v", r, string(debug.Stack()))
-			os.WriteFile(crashPath, []byte(m), 0666)
-			fmt.Println(m)
-
-			defer recover()
-			fmt.Fprintf(b.conn, "PRIVMSG %v The bot has crashed: %v\n", b.config.IRC.User, r)
-		}
-	}()
+	defer ReportPanic(b)
 
 	fmt.Println("Loading", configPath)
 	if e = b.config.LoadFile(configPath); e != nil {
@@ -471,18 +452,21 @@ func main() {
 	b.conn, e = irc.Connect(b.config.IRC.Addr, b.config.IRC.RateLimit)
 
 	fmt.Println("Authenticating as", b.config.IRC.User)
-	fmt.Fprintf(b.conn, "PASS %v\nNICK %v\n", b.config.IRC.Pass, b.config.IRC.User)
+	b.conn.Send("PASS", b.config.IRC.Pass)
+	b.conn.Send("NICK", b.config.IRC.User)
 
 	errCh := make(chan error)
 	go func(){
+		defer ReportPanic(b)
+
 		var e error
 		var m irc.Msg
-		for m, e = b.conn.Get(); e == nil; m, e = b.conn.Get() {
+		for m, e = b.conn.Recv(); e == nil; m, e = b.conn.Recv() {
 			if m.Cmd == "PING" {
-				fmt.Fprintln(b.conn, "PONG")
+				b.conn.Send("PONG")
 				continue
 			}
-			irc.Dispatch(m, &b)
+			irc.Dispatch(m, b)
 		}
 		errCh <- e
 		close(errCh)
@@ -496,10 +480,11 @@ func main() {
 		break
 	case <-sigCh:
 		var inp string
-		fmt.Print("Close the lobby? [Y/n]: ")
+		fmt.Print("Close the lobby? [y/N]: ")
 		fmt.Scanln(&inp)
-		if inp != "n" {
-			fmt.Fprintf(b.conn, "PRIVMSG %v !mp close\n", b.lobby)
+		if inp == "y" {
+			fmt.Println("Closing the lobby")
+			b.conn.Send("PRIVMSG", b.lobby, "!mp", "close")
 			<-errCh
 		} else {
 			b.conn.Close()
@@ -513,3 +498,13 @@ const (
 	crashPath = "crash.txt"
 	sourceRepository = "https://github.com/xfnty/osubot"
 )
+
+func ReportPanic(b *Bot) {
+	if r := recover(); r != nil {
+		m := fmt.Sprintf("panic: %v\n\n%v", r, string(debug.Stack()))
+		os.WriteFile(crashPath, []byte(m), 0666)
+		fmt.Println(m)
+		b.conn.Send("PRIVMSG", b.config.IRC.User, "The bot has crashed:", r)
+		os.Exit(1)
+	}
+}
