@@ -285,7 +285,11 @@ func (b *Bot) OnUserCommand(lobby, user, cmd string, args []string) {
 				}
 				playersLeft = slices.Delete(playersLeft, i, i+1)
 			}
-			b.queue = slices.Concat(newQueue, playersLeft)
+			newQueue = slices.Concat(newQueue, playersLeft)
+			if newQueue[0] != b.queue[0] {
+				b.conn.Send("PRIVMSG", lobby, "!mp", "host", newQueue[0])
+			}
+			b.queue = newQueue
 			b.mustDefineQueue = false
 		}
 		b.printQueue(lobby)
