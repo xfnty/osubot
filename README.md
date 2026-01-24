@@ -6,6 +6,8 @@ NodeJS or .NET runtime.
 If the bot suddenly exits, check `crash.txt` and restart it so it would rejoin the lobby. After that you will
 have to define the queue by hand using `!q names...`. Otherwise host rotation will be disabled.
 
+The bot creates a room named `owner's room` and invites the owner into it.
+
 ## Commands
 
 The bot supports most of the commands players would expect it to and a few others related to its settings.
@@ -15,6 +17,7 @@ The bot supports most of the commands players would expect it to and a few other
 | `!q [names...]`    | Prints the host queue or defines it if executed by the owner.    | Anyone      |
 | `!tl`, `!timeleft` | Prints estimated time left until the end of the match.           | Anyone      |
 | `!m`, `!mirrors`   | Prints links to download mirrors for the current beatmap.        | Anyone      |
+| `!as`, `!autoskip` | Toggle autoskip.                                                 | Anyone      |
 | `!s`, `!skip`      | Transfers host to the next player in the queue.                  | Host, Owner |
 | `!hr [on/off]`     | Enabled/disables host rotation or prints its status.             | Owner       |
 | `!dc [on/off]`     | Enabled/disables difficulty constraint or prints its status.     | Owner       |
@@ -53,7 +56,7 @@ The `config.json` file has the following structure:
     },
     "host_rotation": {
         "enabled": true,
-        "print_queue": true
+        "print_queue": false
     },
     "diffuclty_constraint": {
         "enabled": false,
@@ -62,8 +65,7 @@ The `config.json` file has the following structure:
 }
 ```
 
-`host_rotation.print_queue` flag will make the bot print the host queue every time the match finishes. Set it
-to `false` if you want the bot to be more quiet.
+`host_rotation.print_queue` flag will make the bot print the host queue every time the match finishes.
 
 [email]: mailto:xfnty.x@gmail.com
 [issue]: https://github.com/xfnty/osubot/issues/new

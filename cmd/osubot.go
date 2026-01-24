@@ -17,6 +17,11 @@ import (
 	"osubot/osu/irc"
 )
 
+type Player struct {
+	Name string
+	AutoSkip bool
+}
+
 type Bot struct {
 	mu sync.Mutex
 	config osubot.Config
@@ -24,7 +29,7 @@ type Bot struct {
 	conn irc.Conn
 	api *api.Client
 	lobby string
-	queue []string
+	queue []Player
 	beatmap api.Beatmap
 	matchInProgress bool
 	matchStartTime time.Time
@@ -55,7 +60,11 @@ func (b *Bot) OnJoined(lobby string, players []string) {
 	defer b.mu.Unlock()
 
 	b.lobby = lobby
-	b.queue = players
+
+	b.queue = make([]Player, len(players), len(players))
+	for i, name := range players {
+		b.queue[i] = Player{ Name: name }
+	}
 
 	if b.cache.Lobby != lobby {
 		b.conn.Send("PRIVMSG", lobby, "!mp", "password")
@@ -104,7 +113,7 @@ func (b *Bot) OnUserJoined(lobby, user string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	b.queue = append(b.queue, user)
+	b.queue = append(b.queue, Player{ Name: user })
 
 	if len(b.queue) == 1 {
 		b.conn.Send("PRIVMSG", lobby, "!mp", "host", user)
@@ -115,15 +124,15 @@ func (b *Bot) OnUserLeft(lobby, user string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	i := slices.Index(b.queue, user)
+	i := slices.IndexFunc(b.queue, playerIndexFunc(user))
 	b.queue = slices.Concat(b.queue[:i], b.queue[i+1:])
 
 	if len(b.queue) == 0 {
 		fmt.Println("All players have left, closing the lobby")
 		b.conn.Send("PRIVMSG", lobby, "!mp", "close")
 	} else if b.config.HR.Enabled && i == 0 {
-		fmt.Printf("The host has left, transferring host to the next player in the queue (%v)\n", b.queue[0])
-		b.conn.Send("PRIVMSG", lobby, "!mp", "host", b.queue[0])
+		fmt.Printf("The host has left, transferring host to the next player (%v)\n", b.queue[0].Name)
+		b.conn.Send("PRIVMSG", lobby, "!mp", "host", b.queue[0].Name)
 	}
 
 	if len(b.queue) <= 1 && b.mustDefineQueue {
@@ -136,16 +145,16 @@ func (b *Bot) OnHostChanged(lobby, user string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	if user != b.queue[0] && b.config.HR.Enabled && !b.mustDefineQueue {
+	if user != b.queue[0].Name && b.config.HR.Enabled && !b.mustDefineQueue {
 		fmt.Println("Reverting illegal host transfer to", user)
-		b.conn.Send("PRIVMSG", lobby, "!mp", "host", b.queue[0])
+		b.conn.Send("PRIVMSG", lobby, "!mp", "host", b.queue[0].Name)
 		b.conn.Send(
 			"PRIVMSG",
 			lobby,
 			fmt.Sprintf(
 				"%v, you can't transfer host to another player because host rotation is enabled. " +
 				"You can ask %v to disable it.",
-				b.queue[0],
+				b.queue[0].Name,
 				b.config.IRC.User,
 			),
 		)
@@ -192,7 +201,7 @@ func (b *Bot) OnBeatmapChanged(lobby, artist, title, difficulty string, id int) 
 					fmt.Sprintf(
 						"%v, [https://osu.ppy.sh/beatmapsets/%v#osu/%v %v - %v [%v]] is %v. " +
 						"You can ask %v to change the allowed difficulty range.",
-						b.queue[0],
+						b.queue[0].Name,
 						bm.BeatmapSetID,
 						bm.ID,
 						bm.BeatmapSet.Artist,
@@ -216,14 +225,6 @@ func (b *Bot) OnBeatmapChanged(lobby, artist, title, difficulty string, id int) 
 	}
 
 	b.beatmap = bm
-
-	fmt.Printf(
-		"Selected %v - %v [%v] %.2f*\n",
-		bm.BeatmapSet.Artist,
-		bm.BeatmapSet.Title,
-		bm.Name,
-		bm.Stars,
-	)
 }
 
 func (b *Bot) OnAllPlayersReady(lobby string) {
@@ -263,38 +264,31 @@ func (b *Bot) OnUserMessage(lobby, user, message string) {
 }
 
 func (b *Bot) OnUserCommand(lobby, user, cmd string, args []string) {
-	fmt.Printf("%v executed %v(%v)\n", user, cmd, strings.Join(args, ", "))
-
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	if cmd == "q" || cmd == "queue" {
 		if len(args) > 0 && user == b.config.IRC.User {
-			newQueue := make([]string, 0, len(b.queue))
+			newQueue := make([]Player, 0, len(b.queue))
 			playersLeft := slices.Clone(b.queue)
 			for _, nameApprox := range args {
-				name, ok := findOneByApprox(nameApprox, playersLeft)
-				if !ok {
+				i := findOnePlayerByApprox(nameApprox, playersLeft)
+				if i == -1 {
 					fmt.Printf("No single player matches \"%v\" approximation.\n", nameApprox)
 					continue
 				}
-				newQueue = append(newQueue, name)
-				i := slices.Index(playersLeft, name)
-				if i == -1 {
-					panic(fmt.Errorf("%v %v %v %v", args, playersLeft, name))
-				}
+				newQueue = append(newQueue, playersLeft[i])
 				playersLeft = slices.Delete(playersLeft, i, i+1)
 			}
 			newQueue = slices.Concat(newQueue, playersLeft)
-			if newQueue[0] != b.queue[0] {
-				b.conn.Send("PRIVMSG", lobby, "!mp", "host", newQueue[0])
+			if newQueue[0].Name != b.queue[0].Name {
+				b.conn.Send("PRIVMSG", lobby, "!mp", "host", newQueue[0].Name)
 			}
 			b.queue = newQueue
 			b.mustDefineQueue = false
 		}
 		b.printQueue(lobby)
-	} else if (cmd == "s" || cmd == "skip") && (user == b.queue[0] || user == b.config.IRC.User) {
-		fmt.Println("Skipping", user)
+	} else if (cmd == "s" || cmd == "skip") && (user == b.queue[0].Name || user == b.config.IRC.User) {
 		b.rotateHost(lobby)
 	} else if (cmd == "tl" || cmd == "timeleft") && b.matchInProgress && b.beatmap.ID != 0 {
 		tl := b.matchStartTime.Add(time.Duration(b.beatmap.Length) * time.Second).Sub(time.Now())
@@ -382,6 +376,21 @@ func (b *Bot) OnUserCommand(lobby, user, cmd string, args []string) {
 		} else {
 			b.conn.Send("PRIVMSG", lobby, "Syntax: !pq on/off")
 		}
+	} else if cmd == "as" || cmd == "autoskip" {
+		i := slices.IndexFunc(b.queue, playerIndexFunc(user))
+		if i == -1 {
+			fmt.Println(user, "is not in the queue!")
+			return
+		}
+		b.queue[i].AutoSkip = !b.queue[i].AutoSkip
+		b.conn.Send(
+			"PRIVMSG",
+			lobby,
+			"Auto skip for",
+			b.queue[i].Name,
+			"is",
+			boolToEnabledDisabled(b.queue[i].AutoSkip),
+		)
 	} else if cmd == "m" || cmd == "mirrors" {
 		if b.beatmap.ID == 0 {
 			fmt.Println("The bot couldn't get the beatmap info up to this point")
@@ -405,27 +414,40 @@ func (b *Bot) printQueue(lobby string) {
 }
 
 func (b *Bot) rotateHost(lobby string) {
-	b.queue = slices.Concat(b.queue[1:], b.queue[:1])
-	fmt.Printf("Rotated host queue: %v.\n", formatQueue(b.queue))
-	b.conn.Send("PRIVMSG", lobby, "!mp", "host", b.queue[0])
-}
-
-func findOneByApprox(str string, strs []string) (string, bool) {
-	str = strings.ToLower(str)
-	out := ""
-	for _, s := range strs {
-		if strings.HasPrefix(strings.ToLower(s), str) {
-			if out != "" {
-				return "", false
-			}
-			out = s
+	for i := 1; i < len(b.queue); i++ {
+		if !b.queue[i].AutoSkip {
+			b.queue = slices.Concat(b.queue[i:], b.queue[:i])
+			b.conn.Send("PRIVMSG", lobby, "!mp", "host", b.queue[0].Name)
+			return
 		}
 	}
-	return out, out != ""
 }
 
-func formatQueue(queue []string) string {
-	return strings.Join(slices.Concat(queue[1:], queue[:1]), ", ")
+func findOnePlayerByApprox(name string, players []Player) int {
+	name = strings.ToLower(name)
+	out := -1
+	for i, player := range players {
+		if strings.HasPrefix(strings.ToLower(player.Name), name) {
+			if out != -1 {
+				return -1
+			}
+			out = i
+		}
+	}
+	return out
+}
+
+func formatQueue(queue []Player) string {
+	names := make([]string,0, len(queue))
+	for _, p := range queue {
+		if !p.AutoSkip {
+			names = append(names, p.Name)
+		}
+	}
+	if len(names) > 0 {
+		return strings.Join(slices.Concat(names[1:], names[:1]), ", ")
+	}
+	return "(empty)"
 }
 
 func boolToEnabledDisabled(flag bool) string {
@@ -433,6 +455,10 @@ func boolToEnabledDisabled(flag bool) string {
 		return "enabled"
 	}
 	return "disabled"
+}
+
+func playerIndexFunc(targetName string) func(Player)bool {
+	return func(p Player)bool{ return p.Name == targetName }
 }
 
 func main() {
@@ -456,7 +482,6 @@ func main() {
 			b.config.IRC.RateLimit = 4
 			b.config.API.Addr = "https://osu.ppy.sh"
 			b.config.HR.Enabled = true
-			b.config.HR.PrintQueue = true
 			b.config.DC.Range[1] = 10
 			b.config.SaveFile(configPath)
 		} else {
