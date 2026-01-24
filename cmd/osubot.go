@@ -121,7 +121,7 @@ func (b *Bot) OnUserLeft(lobby, user string) {
 	if len(b.queue) == 0 {
 		fmt.Println("All players have left, closing the lobby")
 		b.conn.Send("PRIVMSG", lobby, "!mp", "close")
-	} else if b.config.HR.Enabled {
+	} else if b.config.HR.Enabled && i == 0 {
 		fmt.Printf("The host has left, transferring host to the next player in the queue (%v)\n", b.queue[0])
 		b.conn.Send("PRIVMSG", lobby, "!mp", "host", b.queue[0])
 	}
