@@ -56,7 +56,7 @@ The `config.json` file has the following structure:
     },
     "diffuclty_constraint": {
         "enabled": false,
-        "range": [0, 0]
+        "range": [0, 10]
     }
 }
 ```

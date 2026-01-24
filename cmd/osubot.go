@@ -58,9 +58,15 @@ func (b *Bot) OnJoined(lobby string, players []string) {
 	b.queue = players
 
 	if b.cache.Lobby != lobby {
-		fmt.Fprintf(b.conn, "PRIVMSG %v !mp password\n", lobby)
-		fmt.Fprintf(b.conn, "PRIVMSG %v !mp size 8\n", lobby)
-		fmt.Fprintf(b.conn, "PRIVMSG %v !mp invite %v\n", lobby, b.config.IRC.User)
+		fmt.Fprintf(
+			b.conn,
+			"PRIVMSG %[1]v !mp password\n" +
+			"PRIVMSG %[1]v !mp mods Freemod\n" +
+			"PRIVMSG %[1]v !mp size 8\n" +
+			"PRIVMSG %[1]v !mp invite %[2]v\n",
+			lobby,
+			b.config.IRC.User,
+		)
 	} else if len(players) > 1 {
 		b.mustDefineQueue = true
 		b.config.HR.Enabled = false
@@ -449,6 +455,7 @@ func main() {
 			b.config.API.Addr = "https://osu.ppy.sh"
 			b.config.HR.Enabled = true
 			b.config.HR.PrintQueue = true
+			b.config.DC.Range[1] = 10
 			b.config.SaveFile(configPath)
 		} else {
 			panic(e)
