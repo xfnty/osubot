@@ -3,10 +3,10 @@
 It is packaged as a single executable file that doesn't require any other software to be installed, like
 NodeJS or .NET runtime.
 
+The bot creates a room named `owner's room` and invites the owner into it.
+
 If the bot suddenly exits, check `crash.txt` and restart it so it would rejoin the lobby. After that you will
 have to define the queue by hand using `!q names...`. Otherwise host rotation will be disabled.
-
-The bot creates a room named `owner's room` and invites the owner into it.
 
 ## Commands
 
@@ -31,6 +31,8 @@ letters in lowercase. If username contains whitespace, use double quotes: `"a pl
 and `milosz`.
 
 Difficulty constraint will not work until a beatmap that matches the constraint range is selected.
+
+If you need to start a match after a delay or abort the countdown, use the standard  `!mp start <delay>` and `!mp abort` commands.
 
 If you want me to add more commands, [send me an email][email] or [open an issue][issue]. Also pull requests
 are always welcome).
